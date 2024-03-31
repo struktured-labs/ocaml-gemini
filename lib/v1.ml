@@ -276,7 +276,15 @@ module T = struct
 
       type request = unit [@@deriving yojson, sexp]
 
-      type response = volume list list list [@@deriving of_yojson, sexp]
+      type response = volume list [@@deriving sexp]
+
+      type nested_response = volume list list list [@@deriving sexp, of_yojson]
+
+      let response_of_yojson (yojson : Yojson.Safe.t) :
+          (response, 'err) Result.t =
+        nested_response_of_yojson yojson
+        |> Result.map ~f:(fun events ->
+               List.bind events ~f:Fn.id |> List.bind ~f:Fn.id )
     end
 
     include T
