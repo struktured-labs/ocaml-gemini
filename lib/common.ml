@@ -236,13 +236,14 @@ module Symbol = struct
   module Enum = Json.Enum (T)
   include Enum
 
+  let currency_pair_of_string s =
+    let buy = String.prefix s 3 |> Currency.Enum_or_string.of_string in
+    let sell = String.suffix s 3 |> Currency.Enum_or_string.of_string in
+    (buy, sell)
+
   let to_currency_pair :
       [< t ] -> Currency.Enum_or_string.t * Currency.Enum_or_string.t = function
-    | #t as c ->
-      to_string c |> fun s ->
-      let buy = String.prefix s 3 |> Currency.Enum_or_string.of_string in
-      let sell = String.suffix s 3 |> Currency.Enum_or_string.of_string in
-      (buy, sell)
+    | #t as c -> to_string c |> currency_pair_of_string
 
   let to_currency : [< t ] -> Side.t -> Currency.Enum_or_string.t =
    fun t side ->
@@ -252,6 +253,15 @@ module Symbol = struct
     | `Sell -> sell
 
   include (Json.Make (Enum) : Json.S with type t := t)
+
+  let enum_or_string_to_currency enum_or_string ~side =
+    match enum_or_string with
+    | Enum_or_string.String s -> (
+      let buy, sell = currency_pair_of_string s in
+      match side with
+      | `Buy -> buy
+      | `Sell -> sell )
+    | Enum_or_string.Enum e -> to_currency e side
 end
 
 (** Represents order types supported on Gemini. *)
