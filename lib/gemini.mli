@@ -321,7 +321,7 @@ module V1 : sig
 
     (** The type of a trade volume response, which is a list of list of volumes
         grouped by exchange symbol. *)
-    type response = volume list list list [@@deriving sexp]
+    type response = volume list [@@deriving sexp]
 
     include
       Rest.Operation.S
