@@ -267,7 +267,7 @@ module T = struct
         sell_taker_notional : Decimal_number.t;
         sell_taker_count : Int_number.t
       }
-    [@@deriving yojson, sexp]
+    [@@deriving yojson, sexp, fields]
 
     module T = struct
       let name = "tradevolume"

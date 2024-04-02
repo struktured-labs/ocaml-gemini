@@ -18,6 +18,7 @@ module Rest = Rest
 module Result = Json.Result
 module Inf_pipe = Inf_pipe
 module Poly_ok = Poly_ok
+module Pnl = Pnl
 
 (** Version v1 of the Gemini REST and web socket apis. *)
 module V1 : sig
@@ -315,7 +316,7 @@ module V1 : sig
         sell_taker_notional : Decimal_number.t;
         sell_taker_count : Int_number.t
       }
-    [@@deriving sexp, yojson]
+    [@@deriving sexp, yojson, fields]
 
     type request = unit [@@deriving sexp, of_yojson]
 

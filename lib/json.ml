@@ -82,6 +82,12 @@ module type S = sig
     val to_enum : t -> enum option
 
     val of_enum : enum -> t
+
+    val promote : t -> enum option
+
+    val promote_exn : t -> enum
+
+    val to_enum_exn : t -> enum
   end
 
   val dict : (string * t) list
@@ -212,10 +218,30 @@ module Make (E : ENUM_STRING) : S with type t = E.t = struct
           | Enum t -> Some t
           | String _ -> None
 
+        let conversion_error s = sprintf "Can't convert string %s to enum" s
+
+        let to_enum_exn = function
+          | Enum t -> t
+          | String s -> failwith @@ conversion_error s
+
         let of_enum e = Enum e
+
+        let equal t t' = equal t t' || String.equal (to_string t) (to_string t')
 
         let of_string s =
           of_string_opt s |> Option.value_map ~f:of_enum ~default:(String s)
+
+        let promote t =
+          match t with
+          | String s -> of_string_opt s
+          | Enum e -> Some e
+
+        let promote_exn t =
+          match t with
+          | String s as ss ->
+            promote ss
+            |> Option.value_exn ~here:[%here] ~message:(conversion_error s)
+          | Enum e -> e
       end
 
       include T
