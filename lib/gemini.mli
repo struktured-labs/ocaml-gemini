@@ -419,6 +419,6 @@ module V1 : sig
 
   module Market_data = Market_data
   module Order_events = Order_events
-
-  val command : Command.t
 end
+
+val command : Command.t

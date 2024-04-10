@@ -272,7 +272,7 @@ module T = struct
     include (Json.Make (T) : Json.S with type t := t)
   end
 
-  module Csv_of_event = Ws.Csv_of_event (Event_type)
+  module Csv_of_event = Csv_support.Event_writer (Event_type)
 
   let events_of_response (response : response) =
     let csv_of_event = Csv_of_event.empty in

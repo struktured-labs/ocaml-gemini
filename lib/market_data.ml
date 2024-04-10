@@ -463,7 +463,7 @@ module T = struct
         "response_of_yojson:expected association type in json payload: %s"
         (Yojson.Safe.to_string json)
 
-  module Csv_of_event = Ws.Csv_of_event (Event_type)
+  module Csv_of_event = Csv_support.Event_writer (Event_type)
 
   let events_of_response (response : response) =
     let csv_of_events = Csv_of_event.empty in
