@@ -326,7 +326,7 @@ module T = struct
         { symbol : Symbol.t option; [@default None]
           account : string option [@default None]
         }
-      [@@deriving yojson, sexp]
+      [@@deriving yojson, sexp, fields]
 
       type notional_1d_volume =
         { date : string; (* TODO use strict date type *)
