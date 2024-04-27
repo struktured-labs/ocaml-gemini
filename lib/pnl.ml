@@ -52,9 +52,6 @@ module T = struct
 
   let on_trade ?(notional : float option) t ~(price : float) ~(side : Side.t)
       ~(qty : float) : t =
-    printf "on_trade notional=%f price=%f qty=%f side=%s\n"
-      (Option.value notional ~default:0.0)
-      price qty (Side.to_string side);
     let position_sign =
       match side with
       | `Buy -> 1.0
@@ -146,6 +143,9 @@ module TT : S = struct
             let request = () in
             let config = Cfg.or_default config in
             Nonce.File.(pipe ~init:default_filename) () >>= fun nonce ->
+            let nonce, writer_nonce =
+              Inf_pipe.fork ~pushback_uses:`Fast_consumer_only nonce
+            in
             Tradevolume.post config nonce request >>= function
             | `Ok response ->
               from_trade_vol response |> fun currency_map ->
@@ -156,7 +156,9 @@ module TT : S = struct
                   ~f:(fun ~key:_ ~data acc -> Csv_writer.add acc data)
                   currency_map
               in
-              let _ : int = Csv_writer.write ?dir:None ~name:"pnl" csvable in
+              Inf_pipe.read writer_nonce >>= fun request_id ->
+              let name = sprintf "pnl.%d" request_id in
+              let _ : int = Csv_writer.write ?dir:None ~name csvable in
               Log.Global.flushed ()
             | #Rest.Error.post as post_error ->
               failwiths ~here:[%here]
