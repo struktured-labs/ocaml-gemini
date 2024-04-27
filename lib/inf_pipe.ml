@@ -47,6 +47,8 @@ module T = struct
     Pipe.create
 
   let transfer = Pipe.transfer
+
+  let fork = Pipe.fork
 end
 
 module type S = sig
@@ -99,6 +101,11 @@ module type S = sig
     init:'b ->
     f:('b -> 'a -> ('b * 'c option) Deferred.t) ->
     'c Reader.t
+
+  val fork :
+    'a Reader.t ->
+    pushback_uses:[ `Both_consumers | `Fast_consumer_only ] ->
+    'a Reader.t * 'a Reader.t
 end
 
 include (T : S)
