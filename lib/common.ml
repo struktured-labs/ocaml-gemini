@@ -228,6 +228,10 @@ module Symbol = struct
       | `Ernusd
       | `Ctxusd
       | `Ampusd
+      | `Pepeusd
+      | `Solusd
+      | `Zbcusd
+      | `Avaxusd
       ]
     [@@deriving sexp, enumerate, equal, compare]
   end
