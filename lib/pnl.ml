@@ -124,16 +124,18 @@ module TT : S = struct
     Command.Param.(
       flag "-ts"
         (optional (Command.Arg_type.create Time_float_unix.of_string))
-        ~doc:"Timestamp" )
+        ~doc:
+          "TIMESTAMP Return trades before or equal to the given unix timestamp." )
 
   let limit_trades_param =
-    Command.Param.(flag "-lt" (optional int) ~doc:"Limit trades")
+    Command.Param.(
+      flag "-lt" (optional int) ~doc:"INT Limit the number of trades." )
 
   let symbol_param =
     Command.Param.(
       flag "-sy"
         (optional (Command.Arg_type.create Symbol.of_string))
-        ~doc:"symbol" )
+        ~doc:"STRING Symbol to compute PNL over. Defaults to all." )
 
   let command : string * Command.t =
     let operation_name = "pnl" in
