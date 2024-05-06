@@ -27,6 +27,9 @@ module type S = sig
 
   val update_spot : t -> float -> t
 
+  val update_spots :
+    t Currency_map.t -> float Currency_map.t -> t Currency_map.t
+
   val command : string * Command.t
 end
 
@@ -112,8 +115,13 @@ module T = struct
         Log.Global.error_s (sell_currency |> Currency.Enum_or_string.sexp_of_t);
         currency_map
     in
-
     List.fold ~init ~f:fold_f response
+
+  let update_spots (pnl : t Currency_map.t) (prices : float Currency_map.t) =
+    Map.fold prices ~init:pnl ~f:(fun ~key:currency ~data:price pnl ->
+        Map.update pnl currency ~f:(function
+          | None -> create ~currency ()
+          | Some t -> update_spot t price ) )
 end
 
 module TT : S = struct

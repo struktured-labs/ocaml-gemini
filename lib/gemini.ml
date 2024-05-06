@@ -8,6 +8,7 @@ module Inf_pipe = Inf_pipe
 module Poly_ok = Poly_ok
 module V1 = V1
 module Pnl = Pnl
+module Order_book = Order_book
 open V1
 
 let command : Command.t =
@@ -21,5 +22,6 @@ let command : Command.t =
       Market_data.command;
       Order_events.command;
       Notional_volume.command;
-      Pnl.command
+      Pnl.command;
+      Order_book.command
     ]
