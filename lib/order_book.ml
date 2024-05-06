@@ -119,7 +119,7 @@ module Book = struct
     (*print_s (sexp_of_t t);*)
     t
 
-  let pretty_print ?(max_depth = 20) t =
+  let pretty_print ?(max_depth = 40) t =
     let padding = "..........." in
     printf "#### %s Orderbook (%d) ####\n" (Symbol.to_string t.symbol) t.epoch;
     printf "---------------------------\n";
