@@ -270,6 +270,16 @@ module Books = struct
     Map.update t.books symbol ~f:(function
       | None -> Book.on_market_data (Book.empty symbol) market_data
       | Some book -> Book.on_market_data book market_data )
+
+   let market_value ?(symbols=Symbol.all) ~side (t:t) () =
+       Map.filter_mapi t.books ~f:(fun ~key:symbol ~data -> 
+           List.find_map symbols ~f:(
+               fun symbol' -> match Symbol.equal symbol symbol' with
+               false -> None
+               true -> Boo
+
+
+
 end
 
 let command =
