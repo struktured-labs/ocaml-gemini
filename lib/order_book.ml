@@ -1,6 +1,7 @@
 open! Common
 open V1
 module Symbol_map = Map.Make (Symbol)
+
 (*
 module Inverted_float : Comparator. = struct
   type t = float [@@deriving equal, sexp]
@@ -10,6 +11,17 @@ module Inverted_float : Comparator. = struct
   let comparator = compare
 end
 *)
+module Price_level = struct
+  type t =
+    { price : float;
+      volume : float
+    }
+  [@@deriving sexp, equal, compare, fields]
+
+  let create ~price ~volume = { price; volume }
+
+  let empty = create ~price:0. ~volume:0.
+end
 
 module Bid_price_map = Map.Make (Float)
 module Ask_price_map = Map.Make (Float)
@@ -27,13 +39,14 @@ module Book = struct
   let empty ?(epoch = 0) symbol =
     { symbol; bids = Bid_price_map.empty; asks = Ask_price_map.empty; epoch }
 
+  let signed_price side price =
+    match side with
+    | `Bid -> Float.neg price
+    | `Ask -> price
+
   let set (t : t) ~(side : Bid_ask.t) ~price ~size =
     let epoch = t.epoch + 1 in
-    let price =
-      match side with
-      | `Bid -> Float.neg price
-      | `Ask -> price
-    in
+    let price = signed_price side price in
     match Float.(equal zero size) with
     | true -> (
       match side with
@@ -87,14 +100,78 @@ module Book = struct
     else
       update t ~side ~price ~size:(-.size)
 
-  let best_bid t = Map.min_elt t.bids |> Option.value ~default:(Float.nan, 0.)
+  let best_bid t =
+    Map.min_elt t.bids
+    |> Option.value_map
+         ~f:(fun (price, size) -> (signed_price `Bid price, size))
+         ~default:(Float.nan, 0.)
 
   let best_ask t = Map.min_elt t.asks |> Option.value ~default:(Float.nan, 0.)
 
+  let market_price t ~side ~volume =
+    let orders =
+      match side with
+      | `Bid -> t.bids
+      | `Ask -> t.asks
+    in
+    let normalize Price_level.{ price; volume } =
+      Price_level.create ~price:(price /. volume) ~volume
+    in
+    Map.fold_until ~init:Price_level.empty orders ~finish:Fn.id
+      ~f:(fun
+          ~key:price
+          ~data:size
+          Price_level.{ price = avg_price; volume = total_size }
+        ->
+        let total_size' = Float.min volume (size +. total_size) in
+        let price = Float.abs price in
+        match Float.equal total_size volume with
+        | true ->
+          Continue_or_stop.Stop
+            (Price_level.create
+               ~price:(avg_price +. (price *. (total_size' -. total_size)))
+               ~volume:total_size' )
+        | false ->
+          Continue_or_stop.Continue
+            (Price_level.create
+               ~price:(avg_price +. (price *. size))
+               ~volume:total_size' ) )
+    |> normalize
+
+  let bid_market_price t = market_price t ~side:`Bid
+
+  let ask_market_price t = market_price t ~side:`Ask
+
+  let total_volume_at_price_level t ~side ~price =
+    let price = signed_price side price in
+    let orders, min, max =
+      match side with
+      | `Bid ->
+        ( t.bids,
+          price,
+          Map.max_elt t.bids |> Option.value_map ~f:fst ~default:price )
+      | `Ask ->
+        ( t.asks,
+          price,
+          Map.min_elt t.asks |> Option.value_map ~f:fst ~default:price )
+    in
+    Map.fold_range_inclusive orders ~init:(0., 0.) ~max ~min
+      ~f:(fun ~key:price ~data:size (avg_price, total_size) ->
+        let price = Float.abs price in
+        (avg_price +. (price *. size), size +. total_size) )
+    |> fun (avg_price, total_size) ->
+    Price_level.{ price = avg_price /. total_size; volume = total_size }
+
+  let total_bid_volume_at_price_level t ~price =
+    total_volume_at_price_level t ~side:`Bid ~price
+
+  let total_ask_volume_at_price_level t ~price =
+    total_volume_at_price_level t ~side:`Ask ~price
+
   let best ~side =
     match side with
-    | `Buy -> best_bid
-    | `Sell -> best_ask
+    | `Bid -> best_bid
+    | `Ask -> best_ask
 
   let on_market_data t (market_data : Market_data.response) =
     let message = market_data.message in
@@ -120,7 +197,7 @@ module Book = struct
     t
 
   let pretty_print ?(max_depth = 40) t =
-    let padding = "..........." in
+    let padding = "......................." in
     printf "#### %s Orderbook (%d) ####\n" (Symbol.to_string t.symbol) t.epoch;
     printf "---------------------------\n";
     let printer ~side ~price ~size =
@@ -152,6 +229,17 @@ module Book = struct
     Map.fold_until ~init:[] t.bids ~finish:(fun _ -> ()) ~f:(f ~side:`Bid);
     printf "%s | %s\n" padding padding;
     Map.fold_until ~init:[] t.asks ~finish:(fun _ -> ()) ~f:(f ~side:`Ask)
+
+  let pipe (module Cfg : Cfg.S) ~symbol () =
+    let book = empty symbol in
+    Market_data.client (module Cfg) ?query:None ~uri_args:symbol ()
+    >>| fun pipe ->
+    Pipe.folding_map ~init:book pipe ~f:(fun book response ->
+        match response with
+        | `Ok response ->
+          let book = on_market_data book response in
+          (book, `Ok book)
+        | #Market_data.Error.t as e -> (book, e) )
 end
 
 module Books = struct
@@ -215,22 +303,14 @@ let command =
         Market_data.default_uri_args
       |> Option.value ~default:`Ethusd
     in
-    let book = Book.empty symbol in
-    Market_data.client (module Cfg) ?query:None ~uri_args:symbol ()
-    >>= fun pipe ->
-    Pipe.folding_map ~init:book pipe ~f:(fun book response ->
-        match response with
-        | `Ok response ->
-          let book = Book.on_market_data book response in
-          (book, `Ok book)
-        | #Market_data.Error.t as e -> (book, e) )
-    |> Pipe.iter ~f:(function
-         | `Ok book ->
-           Book.pretty_print book;
-           Deferred.unit
-         | #Market_data.Error.t as e ->
-           failwiths ~here:[%here] "Market data error" e
-             Market_data.Error.sexp_of_t )
+    Book.pipe (module Cfg) ~symbol ()
+    >>= Pipe.iter ~f:(function
+          | `Ok book ->
+            Book.pretty_print book;
+            Deferred.unit
+          | #Market_data.Error.t as e ->
+            failwiths ~here:[%here] "Market data error" e
+              Market_data.Error.sexp_of_t )
   in
   ( "orderbook",
     Command.async_spec

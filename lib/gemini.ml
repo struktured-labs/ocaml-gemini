@@ -7,8 +7,8 @@ module Result = Json.Result
 module Inf_pipe = Inf_pipe
 module Poly_ok = Poly_ok
 module V1 = V1
-module Pnl = Pnl
 module Order_book = Order_book
+module Pnl = Pnl
 open V1
 
 let command : Command.t =
@@ -22,6 +22,6 @@ let command : Command.t =
       Market_data.command;
       Order_events.command;
       Notional_volume.command;
-      Pnl.command;
-      Order_book.command
+      Order_book.command;
+      Pnl.command
     ]
