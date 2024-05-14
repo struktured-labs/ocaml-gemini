@@ -245,13 +245,27 @@ module Symbol = struct
     let sell = String.suffix s 3 |> Currency.Enum_or_string.of_string in
     (buy, sell)
 
-  let to_currency_pair :
+  let enum_or_string_to_currency_pair :
       [< t ] -> Currency.Enum_or_string.t * Currency.Enum_or_string.t = function
     | #t as c -> to_string c |> currency_pair_of_string
 
+  let to_currency_pair : [< t ] -> (Currency.t * Currency.t) option = function
+    | #t as c ->
+      to_string c |> currency_pair_of_string |> fun (buy, sell) ->
+      Option.both
+        (Currency.Enum_or_string.to_enum buy)
+        (Currency.Enum_or_string.to_enum sell)
+
+  let of_currency_pair : Currency.t -> Currency.t -> t option =
+   fun buy sell ->
+    List.find all ~f:(fun symbol ->
+        Option.value_map (to_currency_pair symbol) ~default:false
+          ~f:(fun (buy', sell') ->
+            Currency.(equal buy buy' && equal sell sell') ) )
+
   let to_currency : [< t ] -> Side.t -> Currency.Enum_or_string.t =
    fun t side ->
-    to_currency_pair t |> fun (buy, sell) ->
+    enum_or_string_to_currency_pair t |> fun (buy, sell) ->
     match side with
     | `Buy -> buy
     | `Sell -> sell

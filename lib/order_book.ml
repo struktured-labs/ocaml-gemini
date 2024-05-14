@@ -266,20 +266,22 @@ module Books = struct
 
   let symbols t = Map.keys t.books
 
+  let book (t : t) symbol = Map.find t.books symbol
+
+  let book_exn (t : t) symbol = Map.find_exn t.books symbol
+
   let on_market_data t symbol (market_data : Market_data.response) =
     Map.update t.books symbol ~f:(function
       | None -> Book.on_market_data (Book.empty symbol) market_data
       | Some book -> Book.on_market_data book market_data )
 
-   let market_value ?(symbols=Symbol.all) ~side (t:t) () =
-       Map.filter_mapi t.books ~f:(fun ~key:symbol ~data -> 
-           List.find_map symbols ~f:(
-               fun symbol' -> match Symbol.equal symbol symbol' with
-               false -> None
-               true -> Boo
+  (* let market_value ?(symbols = Symbol.all) ~side (t : t) () =
+     Map.filter_mapi t.books ~f:(fun ~key:symbol ~data:book ->
 
-
-
+         List.find_map symbols ~f:(fun symbol' ->
+             match Symbol.equal symbol symbol' with
+             | false -> None
+             | true -> Book.market_price ~side book ~volume ) )*)
 end
 
 let command =

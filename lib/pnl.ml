@@ -122,6 +122,23 @@ module T = struct
         Map.update pnl currency ~f:(function
           | None -> create ~currency ()
           | Some t -> update_spot t price ) )
+
+  let update_from_book (pnl : t Currency_map.t) (books : Order_book.Books.t) =
+    let f ~key:currency ~data:t =
+      Currency.Enum_or_string.to_enum currency
+      |> Option.bind ~f:(fun currency ->
+             let symbol = Symbol.of_currency_pair currency `Usd in
+             Option.bind symbol ~f:(fun symbol ->
+                 Order_book.Books.book books symbol )
+             |> Option.map ~f:(fun book ->
+                    update_spot t
+                      (Order_book.Book.market_price book ~side:`Ask
+                         ~volume:t.position
+                       |> function
+                       | Order_book.Price_level.{ price = _; volume } -> volume
+                      ) ) )
+    in
+    Map.filter_mapi pnl ~f
 end
 
 module TT : S = struct
