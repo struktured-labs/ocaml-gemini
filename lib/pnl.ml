@@ -123,7 +123,8 @@ module T = struct
           | None -> create ~currency ()
           | Some t -> update_spot t price ) )
 
-  let update_from_book (pnl : t Currency_map.t) (books : Order_book.Books.t) =
+  let update_from_books (pnl : t Currency_map.t) ~(books : Order_book.Books.t) :
+      t Currency_map.t =
     let f ~key:currency ~data:t =
       Currency.Enum_or_string.to_enum currency
       |> Option.bind ~f:(fun currency ->
@@ -135,10 +136,20 @@ module T = struct
                       (Order_book.Book.market_price book ~side:`Ask
                          ~volume:t.position
                        |> function
-                       | Order_book.Price_level.{ price = _; volume } -> volume
-                      ) ) )
+                       | Order_book.Price_level.{ price; volume } -> (
+                         match Float.equal volume t.position with
+                         | true -> price
+                         | false ->
+                           Log.Global.info
+                             "Volume estimate %f for price %f less than \
+                              position %f"
+                             volume t.position price;
+                           price ) ) ) )
     in
     Map.filter_mapi pnl ~f
+
+  let update_from_book ~(book : Order_book.Book.t) =
+    update_from_books ~books:(Order_book.Books.(set_book empty) book)
 end
 
 module TT : S = struct
@@ -174,20 +185,25 @@ module TT : S = struct
           and limit_trades = limit_trades_param
           and symbol = symbol_param in
           fun () ->
-            Deferred.List.iter ~how:`Sequential
-              (Option.value_map symbol ~f:(fun x -> [ x ]) ~default:Symbol.all)
-              ~f:(fun symbol ->
+            let symbols =
+              Option.value_map symbol ~f:(fun x -> [ x ]) ~default:Symbol.all
+            in
+            let config = Cfg.or_default config in
+            Order_book.Books.pipe_exn config ~symbols () >>= fun books_pipe ->
+            Deferred.List.iter ~how:`Sequential symbols ~f:(fun symbol ->
                 let request : Mytrades.request =
                   Mytrades.{ timestamp; limit_trades; symbol }
                 in
-                let config = Cfg.or_default config in
                 Nonce.File.(pipe ~init:default_filename) () >>= fun nonce ->
                 let nonce, writer_nonce =
                   Inf_pipe.fork ~pushback_uses:`Fast_consumer_only nonce
                 in
                 Mytrades.post config nonce request >>= function
                 | `Ok response ->
-                  from_mytrades response |> fun currency_map ->
+                  let book_pipe = Map.find_exn books_pipe symbol in
+                  Pipe.read_exn book_pipe >>= fun book ->
+                  from_mytrades response |> update_from_book ~book
+                  |> fun currency_map ->
                   print_s (Currency_map.sexp_of_t sexp_of_t currency_map);
 
                   let csvable : Csv_writer.t =

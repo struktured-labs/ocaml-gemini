@@ -41,6 +41,8 @@ module T = struct
 
   let folding_filter_map' = Pipe.folding_filter_map'
 
+  let folding_map = Pipe.folding_map
+
   let create :
       ?size_budget:int -> ?info:Sexp.t -> unit -> 'a Reader.t * 'a Pipe.Writer.t
       =
@@ -87,6 +89,13 @@ module type S = sig
 
   val transfer :
     'a Reader.t -> 'b Pipe.Writer.t -> f:('a -> 'b) -> unit Deferred.t
+
+  val folding_map :
+    ?max_queue_length:int ->
+    'a Reader.t ->
+    init:'b ->
+    f:('b -> 'a -> 'b * 'c) ->
+    'c Reader.t
 
   val folding_filter_map :
     ?max_queue_length:int ->

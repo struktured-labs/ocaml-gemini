@@ -240,11 +240,21 @@ module Book = struct
           let book = on_market_data book response in
           (book, `Ok book)
         | #Market_data.Error.t as e -> (book, e) )
+
+  let pipe_exn (module Cfg : Cfg.S) ~symbol () =
+    pipe (module Cfg) ~symbol ()
+    >>| Pipe.map ~f:(function
+          | `Ok x -> x
+          | #Market_data.Error.t as e ->
+            failwiths ~here:[%here] "Market data error" e
+              Market_data.Error.sexp_of_t )
 end
 
 module Books = struct
   type t = { books : Book.t Symbol_map.t }
   [@@deriving fields, compare, equal, sexp]
+
+  let empty = { books = Symbol_map.empty }
 
   let update_ ~f t ~symbol ~side ~price ~size =
     let books =
@@ -268,6 +278,10 @@ module Books = struct
 
   let book (t : t) symbol = Map.find t.books symbol
 
+  let set_book (t : t) (book : Book.t) =
+    let books = t.books in
+    Map.set books ~key:book.symbol ~data:book |> fun books -> { books }
+
   let book_exn (t : t) symbol = Map.find_exn t.books symbol
 
   let on_market_data t symbol (market_data : Market_data.response) =
@@ -275,13 +289,23 @@ module Books = struct
       | None -> Book.on_market_data (Book.empty symbol) market_data
       | Some book -> Book.on_market_data book market_data )
 
-  (* let market_value ?(symbols = Symbol.all) ~side (t : t) () =
-     Map.filter_mapi t.books ~f:(fun ~key:symbol ~data:book ->
+  let pipe (module Cfg : Cfg.S) ?(symbols = Symbol.all) () :
+      [ `Ok of Book.t | Market_data.Error.t ] Pipe.Reader.t Symbol_map.t
+      Deferred.t =
+    Deferred.List.map ~how:`Parallel symbols ~f:(fun symbol ->
+        Deferred.both (return symbol) (Book.pipe (module Cfg) ~symbol ()) )
+    >>| Symbol_map.of_alist_exn
 
-         List.find_map symbols ~f:(fun symbol' ->
-             match Symbol.equal symbol symbol' with
-             | false -> None
-             | true -> Book.market_price ~side book ~volume ) )*)
+  let pipe_exn (module Cfg : Cfg.S) ?symbols () :
+      Book.t Pipe.Reader.t Symbol_map.t Deferred.t =
+    pipe (module Cfg) ?symbols ()
+    >>| Symbol_map.map ~f:(fun pipe ->
+            Pipe.map pipe ~f:(fun result ->
+                match result with
+                | `Ok x -> x
+                | #Market_data.Error.t as e ->
+                  failwiths "Errror updating book" ~here:[%here] e
+                    Market_data.Error.sexp_of_t ) )
 end
 
 let command =
