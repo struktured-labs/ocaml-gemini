@@ -185,8 +185,10 @@ module TT : S = struct
           and limit_trades = limit_trades_param
           and symbol = symbol_param in
           fun () ->
-            let symbols =
-              Option.value_map symbol ~f:(fun x -> [ x ]) ~default:Symbol.all
+            let symbols, is_one_symbol =
+              Option.value_map symbol
+                ~f:(fun x -> ([ x ], true))
+                ~default:(Symbol.all, false)
             in
             let config = Cfg.or_default config in
             Deferred.List.iter ~how:`Sequential symbols ~f:(fun symbol ->
@@ -198,7 +200,7 @@ module TT : S = struct
                   Inf_pipe.fork ~pushback_uses:`Fast_consumer_only nonce
                 in
                 Mytrades.post config nonce request >>= function
-                | `Ok response ->
+                | `Ok response -> (
                   Order_book.Book.pipe_exn config ~symbol ()
                   >>= fun book_pipe ->
                   Pipe.read_exn book_pipe >>= fun book ->
@@ -215,7 +217,10 @@ module TT : S = struct
                   Inf_pipe.read writer_nonce >>= fun request_id ->
                   let name = sprintf "pnl.%d" request_id in
                   let _ : int = Csv_writer.write ?dir:None ~name csvable in
-                  Log.Global.flushed ()
+                  Log.Global.flushed () >>= fun () ->
+                  match is_one_symbol with
+                  | true -> Deferred.unit
+                  | false -> Clock.after (Time_float.Span.of_int_sec 1) )
                 | #Rest.Error.post as post_error ->
                   failwiths ~here:[%here]
                     (sprintf "post for operation %S failed"
