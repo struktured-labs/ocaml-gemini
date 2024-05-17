@@ -169,7 +169,7 @@ module TT : S = struct
 
   let symbol_param =
     Command.Param.(
-      flag "-sy"
+      flag "--symbol"
         (optional (Command.Arg_type.create Symbol.of_string))
         ~doc:"STRING Symbol to compute PNL over. Defaults to all." )
 
@@ -189,7 +189,6 @@ module TT : S = struct
               Option.value_map symbol ~f:(fun x -> [ x ]) ~default:Symbol.all
             in
             let config = Cfg.or_default config in
-            Order_book.Books.pipe_exn config ~symbols () >>= fun books_pipe ->
             Deferred.List.iter ~how:`Sequential symbols ~f:(fun symbol ->
                 let request : Mytrades.request =
                   Mytrades.{ timestamp; limit_trades; symbol }
@@ -200,8 +199,10 @@ module TT : S = struct
                 in
                 Mytrades.post config nonce request >>= function
                 | `Ok response ->
-                  let book_pipe = Map.find_exn books_pipe symbol in
+                  Order_book.Book.pipe_exn config ~symbol ()
+                  >>= fun book_pipe ->
                   Pipe.read_exn book_pipe >>= fun book ->
+                  Pipe.close_read book_pipe;
                   from_mytrades response |> update_from_book ~book
                   |> fun currency_map ->
                   print_s (Currency_map.sexp_of_t sexp_of_t currency_map);
