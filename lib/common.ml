@@ -241,7 +241,10 @@ module Symbol = struct
   include Enum
 
   let currency_pair_of_string s =
-    let buy = String.prefix s 3 |> Currency.Enum_or_string.of_string in
+    (* TODO major hack, need to do something combinatorial instead, building an index over all enum pairs *)
+    let buy =
+      String.prefix s (String.length s - 3) |> Currency.Enum_or_string.of_string
+    in
     let sell = String.suffix s 3 |> Currency.Enum_or_string.of_string in
     (buy, sell)
 
