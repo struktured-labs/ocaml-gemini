@@ -133,7 +133,7 @@ module T = struct
                  Order_book.Books.book books symbol )
              |> Option.map ~f:(fun book ->
                     update_spot t
-                      (Order_book.Book.market_price book ~side:`Ask
+                      (Order_book.Book.market_price book ~side:`Bid
                          ~volume:t.position
                        |> function
                        | Order_book.Price_level.{ price; volume } -> (
@@ -215,7 +215,13 @@ module TT : S = struct
                       currency_map
                   in
                   Inf_pipe.read writer_nonce >>= fun request_id ->
-                  let name = sprintf "pnl.%d" request_id in
+                  let name =
+                    sprintf "pnl.%s.%d"
+                      ( Symbol.to_currency symbol `Buy
+                      |> Currency.Enum_or_string.to_string |> String.lowercase
+                      )
+                      request_id
+                  in
                   let _ : int = Csv_writer.write ?dir:None ~name csvable in
                   Log.Global.flushed () >>= fun () ->
                   match is_one_symbol with
