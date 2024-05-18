@@ -115,7 +115,9 @@ module T = struct
         Log.Global.error_s (sell_currency |> Currency.Enum_or_string.sexp_of_t);
         currency_map
     in
-    List.fold ~init ~f:fold_f response
+    List.sort response ~compare:(fun x y ->
+        Timestamp.compare x.timestampms y.timestampms )
+    |> List.fold ~init ~f:fold_f
 
   let update_spots (pnl : t Currency_map.t) (prices : float Currency_map.t) =
     Map.fold prices ~init:pnl ~f:(fun ~key:currency ~data:price pnl ->
@@ -203,30 +205,34 @@ module TT : S = struct
                 | `Ok response -> (
                   Order_book.Book.pipe_exn config ~symbol ()
                   >>= fun book_pipe ->
-                  Pipe.read_exn book_pipe >>= fun book ->
-                  Pipe.close_read book_pipe;
-                  from_mytrades response |> update_from_book ~book
-                  |> fun currency_map ->
-                  print_s (Currency_map.sexp_of_t sexp_of_t currency_map);
+                  Pipe.read_exactly ~num_values:100 book_pipe >>= function
+                  | `Eof -> failwith "eof"
+                  | `Exactly books
+                  | `Fewer books -> (
+                    Pipe.close_read book_pipe;
+                    from_mytrades response
+                    |> update_from_book ~book:(Queue.last_exn books)
+                    |> fun currency_map ->
+                    print_s (Currency_map.sexp_of_t sexp_of_t currency_map);
 
-                  let csvable : Csv_writer.t =
-                    Map.fold ~init:Csv_writer.empty
-                      ~f:(fun ~key:_ ~data acc -> Csv_writer.add acc data)
-                      currency_map
-                  in
-                  Inf_pipe.read writer_nonce >>= fun request_id ->
-                  let name =
-                    sprintf "pnl.%s.%d"
-                      ( Symbol.to_currency symbol `Buy
-                      |> Currency.Enum_or_string.to_string |> String.lowercase
-                      )
-                      request_id
-                  in
-                  let _ : int = Csv_writer.write ?dir:None ~name csvable in
-                  Log.Global.flushed () >>= fun () ->
-                  match is_one_symbol with
-                  | true -> Deferred.unit
-                  | false -> Clock.after (Time_float.Span.of_int_sec 1) )
+                    let csvable : Csv_writer.t =
+                      Map.fold ~init:Csv_writer.empty
+                        ~f:(fun ~key:_ ~data acc -> Csv_writer.add acc data)
+                        currency_map
+                    in
+                    Inf_pipe.read writer_nonce >>= fun request_id ->
+                    let name =
+                      sprintf "pnl.%s.%d"
+                        ( Symbol.to_currency symbol `Buy
+                        |> Currency.Enum_or_string.to_string |> String.lowercase
+                        )
+                        request_id
+                    in
+                    let _ : int = Csv_writer.write ?dir:None ~name csvable in
+                    Log.Global.flushed () >>= fun () ->
+                    match is_one_symbol with
+                    | true -> Deferred.unit
+                    | false -> Clock.after (Time_float.Span.of_int_sec 1) ) )
                 | #Rest.Error.post as post_error ->
                   failwiths ~here:[%here]
                     (sprintf "post for operation %S failed"

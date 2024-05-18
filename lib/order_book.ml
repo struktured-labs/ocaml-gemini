@@ -41,8 +41,8 @@ module Book = struct
 
   let signed_price side price =
     match side with
-    | `Bid -> Float.neg price
-    | `Ask -> price
+    | `Bid -> price
+    | `Ask -> Float.neg price
 
   let set (t : t) ~(side : Bid_ask.t) ~price ~size =
     let epoch = t.epoch + 1 in
@@ -58,6 +58,7 @@ module Book = struct
       | `Ask -> { t with asks = Map.set t.asks ~key:price ~data:size; epoch } )
 
   let update (t : t) ~(side : Bid_ask.t) ~price ~size =
+    let price = signed_price side price in
     let size_ref = ref 0. in
     let maybe_remove orders =
       match Float.(equal zero !size_ref) with
@@ -90,13 +91,13 @@ module Book = struct
 
   let add t ~side ~price ~size =
     if Float.is_negative size then
-      failwith "Only positive integers expected"
+      failwithf "Only positive integers expected: %f" size ()
     else
       update t ~side ~price ~size
 
   let remove t ~side ~price ~size =
     if Float.is_negative size then
-      failwith "Only positive integers expected"
+      failwithf "Only positive integers expected: %f" size ()
     else
       update t ~side ~price ~size:(-.size)
 
