@@ -75,6 +75,8 @@ module Timestamp = struct
         raw json date. *)
     type t = Time_float_unix.t [@@deriving sexp, equal, compare]
 
+    let now = Time_float_unix.now
+
     let to_string t =
       Time_float_unix.to_span_since_epoch t
       |> Time_float_unix.Span.to_ms |> Float.to_string

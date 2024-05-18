@@ -11,9 +11,37 @@ module Inverted_float : Comparator. = struct
   let comparator = compare
 end
 *)
+
+module Price = struct
+  include Float
+end
+
+module Bid_price = struct
+  include Price
+
+  include Comparator.Make (struct
+    type t = float [@@deriving sexp, compare, equal]
+
+    let compare p p' = compare p p' |> Int.neg
+  end)
+end
+
+(*
+  include Price
+
+  let of_price (price : Price.t) : t = price
+
+ let compare p p' = Float.compare p p' |> Int.neg
+*)
+module Ask_price = struct
+  include Price
+
+  let of_price (price : Price.t) : t = price
+end
+
 module Price_level = struct
   type t =
-    { price : float;
+    { price : Price.t;
       volume : float
     }
   [@@deriving sexp, equal, compare, fields]
@@ -23,42 +51,44 @@ module Price_level = struct
   let empty = create ~price:0. ~volume:0.
 end
 
-module Bid_price_map = Map.Make (Float)
-module Ask_price_map = Map.Make (Float)
+module Bid_price_map = Map.Make (Bid_price)
+module Ask_price_map = Map.Make (Ask_price)
 module Bid_ask = Market_data.Side.Bid_ask
 
 module Book = struct
   type t =
     { symbol : Symbol.t;
-      bids : float Bid_price_map.t;
-      asks : float Ask_price_map.t;
-      epoch : int
+      bids : Price_level.t Bid_price_map.t;
+      asks : Price_level.t Ask_price_map.t;
+      epoch : int;
+      timestamp : Timestamp.t
     }
   [@@deriving fields, compare, equal, sexp]
 
   let empty ?(epoch = 0) symbol =
-    { symbol; bids = Bid_price_map.empty; asks = Ask_price_map.empty; epoch }
+    { symbol;
+      bids = Bid_price_map.empty;
+      asks = Ask_price_map.empty;
+      epoch;
+      timestamp = Timestamp.now ()
+    }
 
-  let signed_price side price =
-    match side with
-    | `Bid -> price
-    | `Ask -> Float.neg price
-
-  let set (t : t) ~(side : Bid_ask.t) ~price ~size =
+  let set ?(timestamp = Timestamp.now ()) t ~(side : Bid_ask.t) ~price ~size =
     let epoch = t.epoch + 1 in
-    let price = signed_price side price in
     match Float.(equal zero size) with
     | true -> (
       match side with
       | `Bid -> { t with bids = Map.remove t.bids price; epoch }
       | `Ask -> { t with asks = Map.remove t.asks price; epoch } )
     | false -> (
+      let data = Price_level.create ~price ~volume:size in
       match side with
-      | `Bid -> { t with bids = Map.set t.bids ~key:price ~data:size; epoch }
-      | `Ask -> { t with asks = Map.set t.asks ~key:price ~data:size; epoch } )
+      | `Bid ->
+        { t with bids = Map.set t.bids ~key:price ~data; epoch; timestamp }
+      | `Ask -> { t with asks = Map.set t.asks ~key:price ~data; epoch } )
 
-  let update (t : t) ~(side : Bid_ask.t) ~price ~size =
-    let price = signed_price side price in
+  let update ?(timestamp = Timestamp.now ()) (t : t) ~(side : Bid_ask.t) ~price
+      ~size =
     let size_ref = ref 0. in
     let maybe_remove orders =
       match Float.(equal zero !size_ref) with
@@ -70,62 +100,58 @@ module Book = struct
       { t with
         bids =
           Map.update t.bids price ~f:(function
-            | None -> size
-            | Some size' ->
+            | None -> Price_level.create ~price ~volume:size
+            | Some { price; volume = size' } ->
               size_ref := size +. size';
-              !size_ref )
+              let volume = !size_ref in
+              Price_level.create ~price ~volume )
           |> maybe_remove;
-        epoch = t.epoch + 1
+        epoch = t.epoch + 1;
+        timestamp
       }
     | `Ask ->
       { t with
-        bids =
+        asks =
           Map.update t.asks price ~f:(function
-            | None -> size
-            | Some size' ->
+            | None -> Price_level.create ~price ~volume:size
+            | Some { price; volume = size' } ->
               size_ref := size +. size';
-              !size_ref )
+              let volume = !size_ref in
+              Price_level.create ~price ~volume )
           |> maybe_remove;
-        epoch = t.epoch + 1
+        epoch = t.epoch + 1;
+        timestamp
       }
 
-  let add t ~side ~price ~size =
+  let add ?timestamp t ~side ~price ~size =
     if Float.is_negative size then
       failwithf "Only positive integers expected: %f" size ()
     else
-      update t ~side ~price ~size
+      update ?timestamp t ~side ~price ~size
 
-  let remove t ~side ~price ~size =
+  let remove ?timestamp t ~side ~price ~size =
     if Float.is_negative size then
       failwithf "Only positive integers expected: %f" size ()
     else
-      update t ~side ~price ~size:(-.size)
+      update ?timestamp t ~side ~price ~size:(-.size)
 
   let best_bid t =
-    Map.min_elt t.bids
-    |> Option.value_map
-         ~f:(fun (price, size) -> (signed_price `Bid price, size))
-         ~default:(Float.nan, 0.)
+    Map.min_elt t.bids |> Option.value ~default:(0., Price_level.empty)
 
-  let best_ask t = Map.min_elt t.asks |> Option.value ~default:(Float.nan, 0.)
+  let best_ask t =
+    Map.min_elt t.asks |> Option.value ~default:(0., Price_level.empty)
 
-  let market_price t ~side ~volume =
-    let orders =
-      match side with
-      | `Bid -> t.bids
-      | `Ask -> t.asks
-    in
+  let bid_market_price t ~volume =
     let normalize Price_level.{ price; volume } =
       Price_level.create ~price:(price /. volume) ~volume
     in
-    Map.fold_until ~init:Price_level.empty orders ~finish:Fn.id
+    Map.fold_until ~init:Price_level.empty t.bids ~finish:Fn.id
       ~f:(fun
           ~key:price
-          ~data:size
+          ~data:{ price = _; volume = size }
           Price_level.{ price = avg_price; volume = total_size }
         ->
         let total_size' = Float.min volume (size +. total_size) in
-        let price = Float.abs price in
         match Float.equal total_size volume with
         | true ->
           Continue_or_stop.Stop
@@ -139,29 +165,77 @@ module Book = struct
                ~volume:total_size' ) )
     |> normalize
 
-  let bid_market_price t = market_price t ~side:`Bid
+  let ask_market_price t ~volume =
+    let normalize Price_level.{ price; volume } =
+      Price_level.create ~price:(price /. volume) ~volume
+    in
+    Map.fold_until ~init:Price_level.empty t.asks ~finish:Fn.id
+      ~f:(fun
+          ~key:price
+          ~data:{ price = _; volume = size }
+          Price_level.{ price = avg_price; volume = total_size }
+        ->
+        let total_size' = Float.min volume (size +. total_size) in
+        match Float.equal total_size volume with
+        | true ->
+          Continue_or_stop.Stop
+            (Price_level.create
+               ~price:(avg_price +. (price *. (total_size' -. total_size)))
+               ~volume:total_size' )
+        | false ->
+          Continue_or_stop.Continue
+            (Price_level.create
+               ~price:(avg_price +. (price *. size))
+               ~volume:total_size' ) )
+    |> normalize
 
-  let ask_market_price t = market_price t ~side:`Ask
+  let market_price t ~side ~volume =
+    match side with
+    | `Bid
+    | `Buy ->
+      bid_market_price t ~volume
+    | `Ask
+    | `Sell ->
+      ask_market_price t ~volume
 
-  let total_volume_at_price_level t ~side ~price =
-    let price = signed_price side price in
+  let total_bid_volume_at_price_level t ~price =
     let orders, min, max =
-      match side with
-      | `Bid ->
-        ( t.bids,
-          price,
-          Map.max_elt t.bids |> Option.value_map ~f:fst ~default:price )
-      | `Ask ->
-        ( t.asks,
-          price,
-          Map.min_elt t.asks |> Option.value_map ~f:fst ~default:price )
+      ( t.bids,
+        price,
+        Map.max_elt t.bids |> Option.value_map ~f:fst ~default:price )
     in
     Map.fold_range_inclusive orders ~init:(0., 0.) ~max ~min
-      ~f:(fun ~key:price ~data:size (avg_price, total_size) ->
+      ~f:(fun
+          ~key:price
+          ~data:{ price = _; volume = size }
+          (avg_price, total_size)
+        ->
         let price = Float.abs price in
         (avg_price +. (price *. size), size +. total_size) )
     |> fun (avg_price, total_size) ->
     Price_level.{ price = avg_price /. total_size; volume = total_size }
+
+  let total_ask_volume_at_price_level t ~price =
+    let orders, min, max =
+      ( t.asks,
+        price,
+        Map.min_elt t.asks |> Option.value_map ~f:fst ~default:price )
+    in
+    Map.fold_range_inclusive orders ~init:(0., 0.) ~max ~min
+      ~f:(fun
+          ~key:price
+          ~data:{ price = _; volume = size }
+          (avg_price, total_size)
+        ->
+        let price = Float.abs price in
+        (avg_price +. (price *. size), size +. total_size) )
+    |> fun (avg_price, total_size) ->
+    Price_level.{ price = avg_price /. total_size; volume = total_size }
+
+  let total_volume_at_price_level t ~side ~price =
+    match side with
+    | `Bid -> total_bid_volume_at_price_level t ~price
+    | `Ask -> total_ask_volume_at_price_level t ~price
 
   let total_bid_volume_at_price_level t ~price =
     total_volume_at_price_level t ~side:`Bid ~price
@@ -173,6 +247,16 @@ module Book = struct
     match side with
     | `Bid -> best_bid
     | `Ask -> best_ask
+
+  let best_n_bids t ~n () =
+    let bids = Map.to_alist ~key_order:`Decreasing t.bids in
+    List.chunks_of ~length:n bids
+    |> List.hd |> Option.value ~default:[] |> List.map ~f:snd
+
+  let best_n_asks t ~n () =
+    let asks = Map.to_alist ~key_order:`Increasing t.asks in
+    List.chunks_of ~length:n asks
+    |> List.hd |> Option.value ~default:[] |> List.map ~f:snd
 
   let on_market_data t (market_data : Market_data.response) =
     let message = market_data.message in
@@ -197,39 +281,30 @@ module Book = struct
     (*print_s (sexp_of_t t);*)
     t
 
-  let pretty_print ?(max_depth = 40) t =
-    let padding = "......................." in
+  let pretty_print ?(max_depth = 10) t =
+    let padding n =
+      List.range 0 n
+      |> List.fold ~f:(fun x (_ : int) -> String.concat [ "."; x ]) ~init:""
+    in
     printf "#### %s Orderbook (%d) ####\n" (Symbol.to_string t.symbol) t.epoch;
     printf "---------------------------\n";
+    let empirical_padding = ref "" in
     let printer ~side ~price ~size =
       let price = Float.abs price in
+      let size_at_price_str = sprintf "%f @ %f " size price in
+      let padding = padding @@ String.length size_at_price_str in
+      empirical_padding := padding;
       match side with
-      | `Bid -> sprintf "%f @ %f | %s" size price padding
-      | `Ask -> sprintf "%s | %f @ %f" padding size price
+      | `Bid -> printf "%s | %s\n" size_at_price_str padding
+      | `Ask -> printf "%s | %s\n" padding size_at_price_str
     in
-    let print_all ~reverse l =
-      ( match reverse with
-      | false -> List.rev l
-      | true -> l )
-      |> List.iter ~f:(printf "%s\n")
-    in
-    let f ~side ~key:price ~data:size acc =
-      match List.length acc < max_depth with
-      | true ->
-        let s = printer ~side ~price ~size in
-        Continue_or_stop.Continue (s :: acc)
-      | false ->
-        Continue_or_stop.Stop
-          (print_all
-             ~reverse:
-               ( match side with
-               | `Bid -> true
-               | `Ask -> false )
-             acc )
-    in
-    Map.fold_until ~init:[] t.bids ~finish:(fun _ -> ()) ~f:(f ~side:`Bid);
-    printf "%s | %s\n" padding padding;
-    Map.fold_until ~init:[] t.asks ~finish:(fun _ -> ()) ~f:(f ~side:`Ask)
+    let bids = best_n_bids t ~n:max_depth () in
+    List.iter bids ~f:(fun Price_level.{ price; volume = size } ->
+        printer ~side:`Bid ~price ~size );
+    printf "%s | %s\n" !empirical_padding !empirical_padding;
+    let asks = best_n_asks t ~n:max_depth () in
+    List.iter asks ~f:(fun Price_level.{ price; volume = size } ->
+        printer ~side:`Ask ~price ~size )
 
   let pipe (module Cfg : Cfg.S) ~symbol () =
     let book = empty symbol in
@@ -267,13 +342,13 @@ module Books = struct
     in
     { books }
 
-  let add = update_ ~f:Book.add
+  let add ?timestamp = update_ ~f:(Book.add ?timestamp)
 
-  let update = update_ ~f:Book.update
+  let update ?timestamp = update_ ~f:(Book.update ?timestamp)
 
-  let remove = update_ ~f:Book.remove
+  let remove ?timestamp = update_ ~f:(Book.remove ?timestamp)
 
-  let set = update_ ~f:Book.set
+  let set ?timestamp = update_ ~f:(Book.set ?timestamp)
 
   let symbols t = Map.keys t.books
 
