@@ -234,6 +234,7 @@ module Symbol = struct
       | `Solusd
       | `Zbcusd
       | `Avaxusd
+      | `Jamusd
       ]
     [@@deriving sexp, enumerate, equal, compare]
   end
