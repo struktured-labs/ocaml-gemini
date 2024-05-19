@@ -344,7 +344,7 @@ module T = struct
           api_auction_fee_bps : Int_number.t;
           fix_maker_fee_bps : Int_number.t;
           fix_taker_fee_bps : Int_number.t;
-          fix_auction_fee_bps : Int_number.t option;
+          fix_auction_fee_bps : Int_number.t option [@default None];
           block_maker_fee_bps : Int_number.t;
           block_taker_fee_bps : Int_number.t;
           date : string; (* TODO use strict date type *)
