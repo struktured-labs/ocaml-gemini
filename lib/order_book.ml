@@ -17,7 +17,7 @@ module Price = struct
 end
 
 module Bid_price = struct
-  include Price
+  include Float
 
   include Comparator.Make (struct
     type t = float [@@deriving sexp, compare, equal]
@@ -51,7 +51,7 @@ module Price_level = struct
   let empty = create ~price:0. ~volume:0.
 end
 
-module Bid_price_map = Map.Make (Bid_price)
+module Bid_price_map = Map.Make_using_comparator (Bid_price)
 module Ask_price_map = Map.Make (Ask_price)
 module Bid_ask = Market_data.Side.Bid_ask
 
@@ -249,9 +249,9 @@ module Book = struct
     | `Ask -> best_ask
 
   let best_n_bids t ~n () =
-    let bids = Map.to_alist ~key_order:`Decreasing t.bids in
+    let bids = Map.to_alist ~key_order:`Increasing t.bids in
     List.chunks_of ~length:n bids
-    |> List.hd |> Option.value ~default:[] |> List.map ~f:snd
+    |> List.hd |> Option.value ~default:[] |> List.map ~f:snd |> List.rev
 
   let best_n_asks t ~n () =
     let asks = Map.to_alist ~key_order:`Increasing t.asks in
