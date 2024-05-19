@@ -338,7 +338,7 @@ module T = struct
         { last_updated_ms : Timestamp.Ms.t;
           web_maker_fee_bps : Int_number.t;
           web_taker_fee_bps : Int_number.t;
-          web_auction_fee_bps : Int_number.t;
+          web_auction_fee_bps : Int_number.t option [@default None];
           api_maker_fee_bps : Int_number.t;
           api_taker_fee_bps : Int_number.t;
           api_auction_fee_bps : Int_number.t option [@default None];
