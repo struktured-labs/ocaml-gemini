@@ -205,8 +205,12 @@ module TT : S = struct
                 | `Ok response -> (
                   Order_book.Book.pipe_exn config ~symbol ()
                   >>= fun book_pipe ->
-                  Pipe.read_exactly ~num_values:100 book_pipe >>= function
-                  | `Eof -> failwith "eof"
+                  Pipe.read_exactly ~num_values:10 book_pipe >>= function
+                  | `Eof ->
+                    failwithf
+                      "Failed to read market data to get a spot price for \
+                       symbol %s"
+                      (Symbol.to_string symbol) ()
                   | `Exactly books
                   | `Fewer books -> (
                     Pipe.close_read book_pipe;
