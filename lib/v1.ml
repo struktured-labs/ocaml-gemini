@@ -341,7 +341,7 @@ module T = struct
           web_auction_fee_bps : Int_number.t;
           api_maker_fee_bps : Int_number.t;
           api_taker_fee_bps : Int_number.t;
-          api_auction_fee_bps : Int_number.t;
+          api_auction_fee_bps : Int_number.t option [@default None];
           fix_maker_fee_bps : Int_number.t;
           fix_taker_fee_bps : Int_number.t;
           fix_auction_fee_bps : Int_number.t option [@default None];
