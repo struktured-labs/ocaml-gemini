@@ -136,10 +136,10 @@ module Book = struct
       update ?timestamp t ~side ~price ~size:(-.size)
 
   let best_bid t =
-    Map.min_elt t.bids |> Option.value ~default:(0., Price_level.empty)
+    Map.min_elt t.bids |> Option.value ~default:(0., Price_level.empty) |> snd
 
   let best_ask t =
-    Map.min_elt t.asks |> Option.value ~default:(0., Price_level.empty)
+    Map.min_elt t.asks |> Option.value ~default:(0., Price_level.empty) |> snd
 
   let bid_market_price t ~volume =
     let normalize Price_level.{ price; volume } =
@@ -152,17 +152,15 @@ module Book = struct
           Price_level.{ price = avg_price; volume = total_size }
         ->
         let total_size' = Float.min volume (size +. total_size) in
-        match Float.equal total_size volume with
-        | true ->
-          Continue_or_stop.Stop
-            (Price_level.create
-               ~price:(avg_price +. (price *. (total_size' -. total_size)))
-               ~volume:total_size' )
-        | false ->
-          Continue_or_stop.Continue
-            (Price_level.create
-               ~price:(avg_price +. (price *. size))
-               ~volume:total_size' ) )
+        let size = total_size' -. total_size in
+        let price_level =
+          Price_level.create
+            ~price:(avg_price +. (price *. size))
+            ~volume:total_size'
+        in
+        match Float.( >= ) total_size volume with
+        | true -> Continue_or_stop.Stop price_level
+        | false -> Continue_or_stop.Continue price_level )
     |> normalize
 
   let ask_market_price t ~volume =
