@@ -12,6 +12,10 @@ module Side = struct
       let to_string : [< t ] -> string = function
         | `Bid -> "bid"
         | `Ask -> "ask"
+
+      let opposite = function
+        | `Bid -> `Ask
+        | `Ask -> `Bid
     end
 
     include T

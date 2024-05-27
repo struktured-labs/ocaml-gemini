@@ -46,6 +46,10 @@ module Side = struct
     let to_string = function
       | `Buy -> "buy"
       | `Sell -> "sell"
+
+    let opposite = function
+      | `Buy -> `Sell
+      | `Sell -> `Buy
   end
 
   include T

@@ -1,14 +1,11 @@
 open! Common
 open V1
-
-module Currency_map = struct
-  module T = Map.Make (Currency.Enum_or_string)
-  include T
-end
+module Currency_map = Map.Make (Currency.Enum_or_string)
+module Symbol_map = Map.Make (Symbol.Enum_or_string)
 
 module type S = sig
   type t =
-    { currency : Currency.Enum_or_string.t;
+    { symbol : Symbol.Enum_or_string.t;
       pnl : float;
       position : float;
       spot : float;
@@ -17,25 +14,24 @@ module type S = sig
     }
   [@@deriving sexp, compare, equal, fields, csv]
 
-  val create :
-    ?notional:float -> currency:Currency.Enum_or_string.t -> unit -> t
+  val create : ?notional:float -> symbol:Symbol.Enum_or_string.t -> unit -> t
 
   val on_trade :
-    ?notional:float -> t -> price:float -> side:Side.t -> qty:float -> t
+    ?avg_trade_price:float -> t -> price:float -> side:Side.t -> qty:float -> t
 
-  val from_mytrades : Mytrades.response -> t Currency_map.t
+  val from_mytrades :
+    ?avg_trade_prices:float Symbol_map.t -> Mytrades.response -> t Symbol_map.t
 
   val update_spot : t -> float -> t
 
-  val update_spots :
-    t Currency_map.t -> float Currency_map.t -> t Currency_map.t
+  val update_spots : t Symbol_map.t -> float Symbol_map.t -> t Symbol_map.t
 
   val command : string * Command.t
 end
 
 module T = struct
   type t =
-    { currency : Currency.Enum_or_string.t;
+    { symbol : Symbol.Enum_or_string.t;
       pnl : float;
       position : float;
       spot : float;
@@ -44,8 +40,8 @@ module T = struct
     }
   [@@deriving sexp, compare, equal, fields, csv]
 
-  let create ?(notional = 0.0) ~(currency : Currency.Enum_or_string.t) () : t =
-    { currency;
+  let create ?(notional = 0.0) ~(symbol : Symbol.Enum_or_string.t) () : t =
+    { symbol;
       pnl = 0.;
       spot = Float.nan;
       notional;
@@ -53,30 +49,34 @@ module T = struct
       position = 0.
     }
 
-  let on_trade ?(notional : float option) t ~(price : float) ~(side : Side.t)
-      ~(qty : float) : t =
+  let rec on_trade ?(avg_trade_price : float option) t ~(price : float)
+      ~(side : Side.t) ~(qty : float) : t =
     let position_sign =
       match side with
       | `Buy -> 1.0
       | `Sell -> -1.0
     in
     let position : float = t.position +. (qty *. position_sign) in
-    let notional_sign : float = position_sign *. -1.0 in
-    let notional : float =
-      Option.value_or_thunk notional ~default:(fun () -> qty *. price)
-      *. notional_sign
-      +. t.notional
-    in
     let pnl_spot = price *. position in
-    let t =
+    ( match Float.is_negative position with
+    | true ->
+      let qty = Float.abs position in
+      let avg_trade_price = Option.value ~default:price avg_trade_price in
+      let t =
+        on_trade ~price:avg_trade_price ~side:(Side.opposite side) ~qty t
+      in
+      on_trade ~avg_trade_price ~price ~side ~qty t
+    | false ->
+      let notional_sign : float = position_sign *. -1.0 in
+      let notional = (qty *. price) +. (notional_sign *. t.notional) in
       { t with
         spot = price;
         notional;
         pnl_spot;
         position;
         pnl = pnl_spot +. notional
-      }
-    in
+      } )
+    |> fun t ->
     let sexp = sexp_of_t t in
     print_s sexp;
     t
@@ -86,67 +86,56 @@ module T = struct
     let pnl_spot = t.position * spot in
     { t with spot; pnl_spot; pnl = t.notional + pnl_spot }
 
-  let from_mytrades (response : Mytrades.response) =
-    let init : t Currency_map.t = Currency_map.empty in
-    let fold_f (currency_map : t Currency_map.t) (trade : Mytrades.trade) =
+  let from_mytrades ?(avg_trade_prices : float Symbol_map.t option)
+      (response : Mytrades.response) : t Symbol_map.t =
+    let init : t Symbol_map.t = Symbol_map.empty in
+    let fold_f (symbol_map : t Symbol_map.t) (trade : Mytrades.trade) =
       let symbol : Symbol.Enum_or_string.t = trade.symbol in
-      let currency = Symbol.enum_or_string_to_currency symbol ~side:`Buy in
-      let sell_currency =
-        Symbol.enum_or_string_to_currency symbol ~side:`Sell
-      in
       let update (t : t) =
-        let notional = None in
         let price = Float.of_string trade.price in
         let side = trade.type_ in
         let qty = Float.of_string trade.amount in
-        on_trade t ?notional ~price ~side ~qty
-      in
-      match Currency.Enum_or_string.promote sell_currency with
-      | Some `Usd ->
-        let f = function
-          | None -> update (create ~currency ())
-          | Some x -> update x
+        let avg_trade_price =
+          Option.value ~default:Symbol_map.empty avg_trade_prices
+          |> fun avg_trade_prices -> Map.find avg_trade_prices symbol
         in
-        Core.Map.update currency_map currency ~f
-      | Some (_ : Currency.t)
-      | None ->
-        (*failwiths ~here:[%here] "Non usd trades unsupported: " sell_currency
-          Currency.Enum_or_string.sexp_of_t*)
-        Log.Global.error_s (sell_currency |> Currency.Enum_or_string.sexp_of_t);
-        currency_map
+        on_trade ?avg_trade_price t ~price ~side ~qty
+      in
+      let f = function
+        | None -> update (create ~symbol ())
+        | Some (t : t) -> update t
+      in
+      Core.Map.update symbol_map symbol ~f
     in
     List.sort response ~compare:(fun x y ->
         Timestamp.compare x.timestampms y.timestampms )
     |> List.fold ~init ~f:fold_f
 
-  let update_spots (pnl : t Currency_map.t) (prices : float Currency_map.t) =
-    Map.fold prices ~init:pnl ~f:(fun ~key:currency ~data:price pnl ->
-        Map.update pnl currency ~f:(function
-          | None -> create ~currency ()
+  let update_spots (pnl : t Symbol_map.t) (prices : float Symbol_map.t) =
+    Map.fold prices ~init:pnl ~f:(fun ~key:symbol ~data:price pnl ->
+        Map.update pnl symbol ~f:(function
+          | None -> create ~symbol ()
           | Some t -> update_spot t price ) )
 
-  let update_from_books (pnl : t Currency_map.t) ~(books : Order_book.Books.t) :
-      t Currency_map.t =
-    let f ~key:currency ~data:t =
-      Currency.Enum_or_string.to_enum currency
-      |> Option.bind ~f:(fun currency ->
-             let symbol = Symbol.of_currency_pair currency `Usd in
-             Option.bind symbol ~f:(fun symbol ->
-                 Order_book.Books.book books symbol )
-             |> Option.map ~f:(fun book ->
-                    update_spot t
-                      (Order_book.Book.market_price book ~side:`Bid
-                         ~volume:t.position
-                       |> function
-                       | Order_book.Price_level.{ price; volume } -> (
-                         match Float.equal volume t.position with
-                         | true -> price
-                         | false ->
-                           Log.Global.info
-                             "Volume estimate %f for price %f less than \
-                              position %f"
-                             volume t.position price;
-                           price ) ) ) )
+  let update_from_books (pnl : t Symbol_map.t) ~(books : Order_book.Books.t) :
+      t Symbol_map.t =
+    let f ~key:symbol ~data:t =
+      Option.bind (Symbol.Enum_or_string.to_enum symbol) ~f:(fun symbol ->
+          Order_book.Books.book books symbol
+          |> Option.map ~f:(fun book ->
+                 update_spot t
+                   (Order_book.Book.market_price book ~side:`Bid
+                      ~volume:t.position
+                    |> function
+                    | Order_book.Price_level.{ price; volume } -> (
+                      match Float.equal volume t.position with
+                      | true -> price
+                      | false ->
+                        Log.Global.info
+                          "Volume estimate %f for price %f less than position \
+                           %f"
+                          volume t.position price;
+                        price ) ) ) )
     in
     Map.filter_mapi pnl ~f
 
@@ -170,9 +159,21 @@ module TT : S = struct
       flag "-lt" (optional int) ~doc:"INT Limit the number of trades." )
 
   let symbol_param =
+    let symbol_of_string (s : string) =
+      match Symbol.of_string_opt s with
+      | Some symbol -> symbol
+      | None -> (
+        match Currency.of_string_opt s with
+        | Some currency ->
+          Symbol.of_currency_pair currency `Usd
+          |> Option.value_exn ~here:[%here]
+               ~message:(sprintf "Invalid currency %s" s)
+        | None -> failwithf "Invalid symbol %s" s () )
+    in
+
     Command.Param.(
       flag "--symbol"
-        (optional (Command.Arg_type.create Symbol.of_string))
+        (optional (Command.Arg_type.create symbol_of_string))
         ~doc:"STRING Symbol to compute PNL over. Defaults to all." )
 
   let command : string * Command.t =
@@ -214,15 +215,15 @@ module TT : S = struct
                   | `Exactly books
                   | `Fewer books -> (
                     Pipe.close_read book_pipe;
-                    from_mytrades response
+                    from_mytrades ?avg_trade_prices:None response
                     |> update_from_book ~book:(Queue.last_exn books)
-                    |> fun currency_map ->
-                    print_s (Currency_map.sexp_of_t sexp_of_t currency_map);
+                    |> fun symbol_map ->
+                    print_s (Symbol_map.sexp_of_t sexp_of_t symbol_map);
 
                     let csvable : Csv_writer.t =
                       Map.fold ~init:Csv_writer.empty
                         ~f:(fun ~key:_ ~data acc -> Csv_writer.add acc data)
-                        currency_map
+                        symbol_map
                     in
                     Inf_pipe.read writer_nonce >>= fun request_id ->
                     let name =
@@ -254,7 +255,7 @@ module Test = struct
 
   let test1 () =
     let trades = [ (1.0, `Buy, 10.0) ] in
-    let t = T.create ~currency:(Currency.Enum_or_string.Enum `Ern) () in
+    let t = T.create ~symbol:(Symbol.Enum_or_string.Enum `Ernusd) () in
     let t' = process_trades t trades in
     Log.Global.info_s (T.sexp_of_t t')
 end

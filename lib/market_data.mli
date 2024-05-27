@@ -13,6 +13,8 @@ module Side : sig
     [@@deriving sexp]
 
     include Json.S with type t := t
+
+    val opposite : t -> t
   end
 
   (** Represents an auction style side. *)
