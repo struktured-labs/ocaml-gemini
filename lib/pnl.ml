@@ -3,6 +3,18 @@ open V1
 module Currency_map = Map.Make (Currency.Enum_or_string)
 module Symbol_map = Map.Make (Symbol.Enum_or_string)
 
+module Update_source = struct
+  module T = struct
+    type t =
+      [ `Market_data
+      | `Trade
+      ]
+    [@@deriving sexp, equal, compare, enumerate]
+  end
+
+  include Json.Make (Json.Enum (T))
+end
+
 module type S = sig
   type t =
     { symbol : Symbol.Enum_or_string.t;
@@ -10,21 +22,39 @@ module type S = sig
       position : float;
       spot : float;
       pnl_spot : float;
-      notional : float
+      notional : float;
+      update_time : Timestamp.t;
+      update_source : Update_source.t
     }
   [@@deriving sexp, compare, equal, fields, csv]
 
-  val create : ?notional:float -> symbol:Symbol.Enum_or_string.t -> unit -> t
+  val create :
+    ?notional:float ->
+    ?update_source:Update_source.t ->
+    ?update_time:Timestamp.t ->
+    symbol:Symbol.Enum_or_string.t ->
+    unit ->
+    t
 
   val on_trade :
-    ?avg_trade_price:float -> t -> price:float -> side:Side.t -> qty:float -> t
+    ?timestamp:Timestamp.t ->
+    ?avg_trade_price:float ->
+    t ->
+    price:float ->
+    side:Side.t ->
+    qty:float ->
+    t
 
   val from_mytrades :
     ?avg_trade_prices:float Symbol_map.t -> Mytrades.response -> t Symbol_map.t
 
-  val update_spot : t -> float -> t
+  val update_spot : ?timestamp:Timestamp.t -> t -> float -> t
 
-  val update_spots : t Symbol_map.t -> float Symbol_map.t -> t Symbol_map.t
+  val update_spots :
+    ?timestamp:Timestamp.t ->
+    t Symbol_map.t ->
+    float Symbol_map.t ->
+    t Symbol_map.t
 
   val command : string * Command.t
 end
@@ -36,21 +66,27 @@ module T = struct
       position : float;
       spot : float;
       pnl_spot : float;
-      notional : float
+      notional : float;
+      update_time : Timestamp.t;
+      update_source : Update_source.t
     }
   [@@deriving sexp, compare, equal, fields, csv]
 
-  let create ?(notional = 0.0) ~(symbol : Symbol.Enum_or_string.t) () : t =
+  let create ?(notional = 0.0) ?(update_source = `Market_data) ?update_time
+      ~(symbol : Symbol.Enum_or_string.t) () : t =
     { symbol;
       pnl = 0.;
       spot = Float.nan;
       notional;
       pnl_spot = 0.;
-      position = 0.
+      position = 0.;
+      update_source;
+      update_time = Option.value_or_thunk update_time ~default:Timestamp.now
     }
 
-  let rec on_trade ?(avg_trade_price : float option) t ~(price : float)
-      ~(side : Side.t) ~(qty : float) : t =
+  let rec on_trade ?timestamp ?(avg_trade_price : float option) t
+      ~(price : float) ~(side : Side.t) ~(qty : float) : t =
+    let timestamp = Option.value_or_thunk timestamp ~default:Timestamp.now in
     let position_sign =
       match side with
       | `Buy -> 1.0
@@ -63,9 +99,10 @@ module T = struct
       let qty = Float.abs position in
       let avg_trade_price = Option.value ~default:price avg_trade_price in
       let t =
-        on_trade ~price:avg_trade_price ~side:(Side.opposite side) ~qty t
+        on_trade ~timestamp ~price:avg_trade_price ~side:(Side.opposite side)
+          ~qty t
       in
-      on_trade ~avg_trade_price ~price ~side ~qty t
+      on_trade ~timestamp ~avg_trade_price ~price ~side ~qty t
     | false ->
       let notional_sign : float = position_sign *. -1.0 in
       let notional = (qty *. price) +. (notional_sign *. t.notional) in
@@ -74,17 +111,26 @@ module T = struct
         notional;
         pnl_spot;
         position;
-        pnl = pnl_spot +. notional
+        pnl = pnl_spot +. notional;
+        update_time = timestamp;
+        update_source = `Trade
       } )
     |> fun t ->
     let sexp = sexp_of_t t in
     print_s sexp;
     t
 
-  let update_spot t spot =
+  let update_spot ?timestamp t spot =
     let open Float in
+    let update_time = Option.value_or_thunk timestamp ~default:Timestamp.now in
     let pnl_spot = t.position * spot in
-    { t with spot; pnl_spot; pnl = t.notional + pnl_spot }
+    { t with
+      spot;
+      pnl_spot;
+      pnl = t.notional + pnl_spot;
+      update_time;
+      update_source = `Market_data
+    }
 
   let from_mytrades ?(avg_trade_prices : float Symbol_map.t option)
       (response : Mytrades.response) : t Symbol_map.t =
@@ -99,7 +145,8 @@ module T = struct
           Option.value ~default:Symbol_map.empty avg_trade_prices
           |> fun avg_trade_prices -> Map.find avg_trade_prices symbol
         in
-        on_trade ?avg_trade_price t ~price ~side ~qty
+        let timestamp = trade.timestamp in
+        on_trade ?avg_trade_price t ~timestamp ~price ~side ~qty
       in
       let f = function
         | None -> update (create ~symbol ())
@@ -111,11 +158,12 @@ module T = struct
         Timestamp.compare x.timestampms y.timestampms )
     |> List.fold ~init ~f:fold_f
 
-  let update_spots (pnl : t Symbol_map.t) (prices : float Symbol_map.t) =
+  let update_spots ?timestamp (pnl : t Symbol_map.t)
+      (prices : float Symbol_map.t) =
     Map.fold prices ~init:pnl ~f:(fun ~key:symbol ~data:price pnl ->
         Map.update pnl symbol ~f:(function
           | None -> create ~symbol ()
-          | Some t -> update_spot t price ) )
+          | Some t -> update_spot ?timestamp t price ) )
 
   let update_from_books (pnl : t Symbol_map.t) ~(books : Order_book.Books.t) :
       t Symbol_map.t =

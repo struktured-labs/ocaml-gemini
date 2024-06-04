@@ -26,7 +26,7 @@ depends: [
   "hex"
   "yojson" {>= "2.1.0"}
   "zarith"
-  "nocrypto"
+  "mirage-crypto"
   "ppx_deriving_yojson" {>= "3.7.0"}
   "ppx_csv_conv"
   "csvfields"

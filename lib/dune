@@ -19,7 +19,7 @@
               uri
               yojson
               zarith
-              nocrypto
+              mirage-crypto
               hex
               cohttp_async_websocket
   )

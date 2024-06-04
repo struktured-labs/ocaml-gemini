@@ -6,11 +6,13 @@ type t =
 
 (** Given a base64 payload, produce an authentication token. *)
 let of_payload s : [< t > `Base64 ] =
-  `Base64 (Cstruct.of_string s |> Nocrypto.Base64.encode)
+  let base64 = Base64.encode_exn s in
+  let cstruct = Cstruct.of_string base64 in
+  `Base64 cstruct
 
 let hmac_sha384 ~api_secret (`Base64 payload) : [< t > `Hex ] =
   let key = Cstruct.of_string api_secret in
-  Nocrypto.Hash.SHA384.hmac ~key payload |> Hex.of_cstruct
+  Mirage_crypto.Hash.SHA384.hmac ~key payload |> Hex.of_cstruct
 
 (** Produce a string representation of the authentication token. *)
 let to_string : [< t ] -> string = function

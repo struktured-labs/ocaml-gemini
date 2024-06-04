@@ -2,16 +2,6 @@ open! Common
 open V1
 module Symbol_map = Map.Make (Symbol)
 
-(*
-module Inverted_float : Comparator. = struct
-  type t = float [@@deriving equal, sexp]
-
-  let compare t t' = Float.compare t t' * -1
-
-  let comparator = compare
-end
-*)
-
 module Price = struct
   include Float
 end
@@ -26,13 +16,6 @@ module Bid_price = struct
   end)
 end
 
-(*
-  include Price
-
-  let of_price (price : Price.t) : t = price
-
- let compare p p' = Float.compare p p' |> Int.neg
-*)
 module Ask_price = struct
   include Price
 
@@ -61,19 +44,21 @@ module Book = struct
       bids : Price_level.t Bid_price_map.t;
       asks : Price_level.t Ask_price_map.t;
       epoch : int;
-      timestamp : Timestamp.t
+      update_time : Timestamp.t
     }
   [@@deriving fields, compare, equal, sexp]
 
-  let empty ?(epoch = 0) symbol =
+  let empty ?timestamp ?(epoch = 0) symbol =
+    let update_time = Option.value_or_thunk timestamp ~default:Timestamp.now in
     { symbol;
       bids = Bid_price_map.empty;
       asks = Ask_price_map.empty;
       epoch;
-      timestamp = Timestamp.now ()
+      update_time
     }
 
-  let set ?(timestamp = Timestamp.now ()) t ~(side : Bid_ask.t) ~price ~size =
+  let set ?timestamp t ~(side : Bid_ask.t) ~price ~size =
+    let update_time = Option.value_or_thunk timestamp ~default:Timestamp.now in
     let epoch = t.epoch + 1 in
     match Float.(equal zero size) with
     | true -> (
@@ -84,11 +69,12 @@ module Book = struct
       let data = Price_level.create ~price ~volume:size in
       match side with
       | `Bid ->
-        { t with bids = Map.set t.bids ~key:price ~data; epoch; timestamp }
-      | `Ask -> { t with asks = Map.set t.asks ~key:price ~data; epoch } )
+        { t with bids = Map.set t.bids ~key:price ~data; epoch; update_time }
+      | `Ask ->
+        { t with asks = Map.set t.asks ~key:price ~data; epoch; update_time } )
 
-  let update ?(timestamp = Timestamp.now ()) (t : t) ~(side : Bid_ask.t) ~price
-      ~size =
+  let update ?timestamp (t : t) ~(side : Bid_ask.t) ~price ~size =
+    let update_time = Option.value_or_thunk timestamp ~default:Timestamp.now in
     let size_ref = ref 0. in
     let maybe_remove orders =
       match Float.(equal zero !size_ref) with
@@ -107,7 +93,7 @@ module Book = struct
               Price_level.create ~price ~volume )
           |> maybe_remove;
         epoch = t.epoch + 1;
-        timestamp
+        update_time
       }
     | `Ask ->
       { t with
@@ -120,7 +106,7 @@ module Book = struct
               Price_level.create ~price ~volume )
           |> maybe_remove;
         epoch = t.epoch + 1;
-        timestamp
+        update_time
       }
 
   let add ?timestamp t ~side ~price ~size =
@@ -323,20 +309,24 @@ module Book = struct
 end
 
 module Books = struct
-  type t = { books : Book.t Symbol_map.t }
+  type t =
+    { books : Book.t Symbol_map.t;
+      update_time : Timestamp.t
+    }
   [@@deriving fields, compare, equal, sexp]
 
-  let empty = { books = Symbol_map.empty }
+  let empty = { books = Symbol_map.empty; update_time = Timestamp.now () }
 
-  let update_ ~f t ~symbol ~side ~price ~size =
+  let update_ ?timestamp ~f t ~symbol ~side ~price ~size =
+    let timestamp = Option.value_or_thunk timestamp ~default:Timestamp.now in
     let books =
       Map.update t.books symbol ~f:(function
         | None ->
-          let book = Book.empty symbol in
+          let book = Book.empty ~timestamp symbol in
           f book ~side ~price ~size
         | Some book -> f book ~side ~price ~size )
     in
-    { books }
+    { books; update_time = timestamp }
 
   let add ?timestamp = update_ ~f:(Book.add ?timestamp)
 
@@ -350,9 +340,11 @@ module Books = struct
 
   let book (t : t) symbol = Map.find t.books symbol
 
-  let set_book (t : t) (book : Book.t) =
+  let set_book ?timestamp (t : t) (book : Book.t) =
+    let update_time = Option.value_or_thunk timestamp ~default:Timestamp.now in
     let books = t.books in
-    Map.set books ~key:book.symbol ~data:book |> fun books -> { books }
+    Map.set books ~key:book.symbol ~data:book |> fun books ->
+    { books; update_time }
 
   let book_exn (t : t) symbol = Map.find_exn t.books symbol
 
