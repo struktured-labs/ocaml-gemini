@@ -8,6 +8,7 @@ module Update_source = struct
     type t =
       [ `Market_data
       | `Trade
+      | `External_trade
       ]
     [@@deriving sexp, equal, compare, enumerate]
   end
@@ -37,6 +38,7 @@ module type S = sig
     t
 
   val on_trade :
+    ?update_source:Update_source.t ->
     ?timestamp:Timestamp.t ->
     ?avg_trade_price:float ->
     t ->
@@ -46,7 +48,9 @@ module type S = sig
     t
 
   val from_mytrades :
-    ?avg_trade_prices:float Symbol_map.t -> Mytrades.response -> t Symbol_map.t
+    ?avg_trade_prices:float Symbol_map.t ->
+    Mytrades.response ->
+    t Symbol_map.t * t Pipe.Reader.t Symbol_map.t * t Pipe.Writer.t Symbol_map.t
 
   val update_spot : ?timestamp:Timestamp.t -> t -> float -> t
 
@@ -84,8 +88,9 @@ module T = struct
       update_time = Option.value_or_thunk update_time ~default:Timestamp.now
     }
 
-  let rec on_trade ?timestamp ?(avg_trade_price : float option) t
-      ~(price : float) ~(side : Side.t) ~(qty : float) : t =
+  let rec on_trade ?(update_source = `Trade) ?timestamp
+      ?(avg_trade_price : float option) t ~(price : float) ~(side : Side.t)
+      ~(qty : float) : t =
     let timestamp = Option.value_or_thunk timestamp ~default:Timestamp.now in
     let position_sign =
       match side with
@@ -100,9 +105,9 @@ module T = struct
       let avg_trade_price = Option.value ~default:price avg_trade_price in
       let t =
         on_trade ~timestamp ~price:avg_trade_price ~side:(Side.opposite side)
-          ~qty t
+          ~update_source:`External_trade ~qty t
       in
-      on_trade ~timestamp ~avg_trade_price ~price ~side ~qty t
+      on_trade ~update_source ~timestamp ~avg_trade_price ~price ~side ~qty t
     | false ->
       let notional_sign : float = position_sign *. -1.0 in
       let notional = (qty *. price) +. (notional_sign *. t.notional) in
@@ -113,7 +118,7 @@ module T = struct
         position;
         pnl = pnl_spot +. notional;
         update_time = timestamp;
-        update_source = `Trade
+        update_source
       } )
     |> fun t ->
     let sexp = sexp_of_t t in
@@ -133,11 +138,16 @@ module T = struct
     }
 
   let from_mytrades ?(avg_trade_prices : float Symbol_map.t option)
-      (response : Mytrades.response) : t Symbol_map.t =
-    let init : t Symbol_map.t = Symbol_map.empty in
-    let fold_f (symbol_map : t Symbol_map.t) (trade : Mytrades.trade) =
+      (response : Mytrades.response) :
+      t Symbol_map.t
+      * t Pipe.Reader.t Symbol_map.t
+      * t Pipe.Writer.t Symbol_map.t =
+    let init : _ Symbol_map.t = Symbol_map.empty in
+    let fold_f
+        (symbol_map : (t * t Pipe.Reader.t * t Pipe.Writer.t) Symbol_map.t)
+        (trade : Mytrades.trade) =
       let symbol : Symbol.Enum_or_string.t = trade.symbol in
-      let update (t : t) =
+      let update (t, reader, writer) =
         let price = Float.of_string trade.price in
         let side = trade.type_ in
         let qty = Float.of_string trade.amount in
@@ -146,17 +156,29 @@ module T = struct
           |> fun avg_trade_prices -> Map.find avg_trade_prices symbol
         in
         let timestamp = trade.timestamp in
-        on_trade ?avg_trade_price t ~timestamp ~price ~side ~qty
+        let t' = on_trade ?avg_trade_price t ~timestamp ~price ~side ~qty in
+        ( t',
+          reader,
+          ( Pipe.write_without_pushback writer t';
+            writer ) )
       in
       let f = function
-        | None -> update (create ~symbol ())
-        | Some (t : t) -> update t
+        | None ->
+          let t' = create ~symbol () in
+          let reader, writer = Pipe.create () in
+          update (t', reader, writer)
+        | Some (t, reader, writer) -> update (t, reader, writer)
       in
       Core.Map.update symbol_map symbol ~f
     in
-    List.sort response ~compare:(fun x y ->
-        Timestamp.compare x.timestampms y.timestampms )
-    |> List.fold ~init ~f:fold_f
+    let result =
+      List.sort response ~compare:(fun x y ->
+          Timestamp.compare x.timestampms y.timestampms )
+      |> List.fold ~init ~f:fold_f
+    in
+    ( Map.map result ~f:(fun (last_t, _reader, _writer) -> last_t),
+      Map.map result ~f:(fun (_last_t, reader, _writer) -> reader),
+      Map.map result ~f:(fun (_last_t, _, writer) -> writer) )
 
   let update_spots ?timestamp (pnl : t Symbol_map.t)
       (prices : float Symbol_map.t) =
@@ -263,8 +285,10 @@ module TT : S = struct
                   | `Exactly books
                   | `Fewer books -> (
                     Pipe.close_read book_pipe;
-                    from_mytrades ?avg_trade_prices:None response
-                    |> update_from_book ~book:(Queue.last_exn books)
+                    let t, _, _ =
+                      from_mytrades ?avg_trade_prices:None response
+                    in
+                    update_from_book t ~book:(Queue.last_exn books)
                     |> fun symbol_map ->
                     print_s (Symbol_map.sexp_of_t sexp_of_t symbol_map);
 
