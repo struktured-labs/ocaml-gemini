@@ -187,30 +187,44 @@ module T = struct
           | None -> create ~symbol ()
           | Some t -> update_spot ?timestamp t price ) )
 
+  let update_from_book t book =
+    update_spot t
+      (Order_book.Book.market_price book ~side:`Bid ~volume:t.position
+       |> function
+       | Order_book.Price_level.{ price; volume } -> (
+         match Float.equal volume t.position with
+         | true -> price
+         | false ->
+           Log.Global.info
+             "Volume estimate %f for price %f less than position %f" volume
+             t.position price;
+           price ) )
+
   let update_from_books (pnl : t Symbol_map.t) ~(books : Order_book.Books.t) :
       t Symbol_map.t =
     let f ~key:symbol ~data:t =
       Option.bind (Symbol.Enum_or_string.to_enum symbol) ~f:(fun symbol ->
           Order_book.Books.book books symbol
-          |> Option.map ~f:(fun book ->
-                 update_spot t
-                   (Order_book.Book.market_price book ~side:`Bid
-                      ~volume:t.position
-                    |> function
-                    | Order_book.Price_level.{ price; volume } -> (
-                      match Float.equal volume t.position with
-                      | true -> price
-                      | false ->
-                        Log.Global.info
-                          "Volume estimate %f for price %f less than position \
-                           %f"
-                          volume t.position price;
-                        price ) ) ) )
+          |> Option.map ~f:(update_from_book t) )
     in
     Map.filter_mapi pnl ~f
 
-  let update_from_book ~(book : Order_book.Book.t) =
+  let update_from_book' ~(book : Order_book.Book.t) =
     update_from_books ~books:(Order_book.Books.(set_book empty) book)
+
+  let pipes ?(how = `Sequential) cfg ~nonce ~(init : t Symbol_map.t) =
+    let f ~key:symbol ~data:t =
+      let symbol = Symbol.Enum_or_string.to_enum_exn symbol in
+      Order_events.client ~nonce Order_book.Book.pipe cfg ~symbol ()
+      >>| fun book_pipe ->
+      Pipe.folding_map ~init:t book_pipe ~f:(fun t book ->
+          match book with
+          | `Ok book ->
+            let t = update_from_book t book in
+            (t, `Ok t)
+          | #Market_data.Error.t as e -> (t, e) )
+    in
+    Deferred.Map.mapi ~how init ~f
 end
 
 module TT : S = struct
@@ -285,7 +299,7 @@ module TT : S = struct
                   | `Exactly books
                   | `Fewer books -> (
                     Pipe.close_read book_pipe;
-                    let t, _, _ =
+                    let t, readers, _ =
                       from_mytrades ?avg_trade_prices:None response
                     in
                     update_from_book t ~book:(Queue.last_exn books)
