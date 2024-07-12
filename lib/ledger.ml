@@ -16,7 +16,7 @@ module Update_source = struct
   include Json.Make (Json.Enum (T))
 end
 
-module type S = sig
+module type ENTRY = sig
   type t =
     { symbol : Symbol.Enum_or_string.t;
       pnl : float;
@@ -47,20 +47,9 @@ module type S = sig
     qty:float ->
     t
 
-  val from_mytrades :
-    ?avg_trade_prices:float Symbol_map.t ->
-    Mytrades.response ->
-    t Symbol_map.t * t Pipe.Reader.t Symbol_map.t * t Pipe.Writer.t Symbol_map.t
-
   val update_spot : ?timestamp:Timestamp.t -> t -> float -> t
 
-  val update_spots :
-    ?timestamp:Timestamp.t ->
-    t Symbol_map.t ->
-    float Symbol_map.t ->
-    t Symbol_map.t
-
-  val command : string * Command.t
+  val update_from_book : t -> Order_book.Book.t -> t
 end
 
 module T = struct
@@ -137,6 +126,113 @@ module T = struct
       update_source = `Market_data
     }
 
+  let update_from_book t book =
+    update_spot t
+      (Order_book.Book.market_price book ~side:`Bid ~volume:t.position
+       |> function
+       | Order_book.Price_level.{ price; volume } -> (
+         match Float.equal volume t.position with
+         | true -> price
+         | false ->
+           Log.Global.info
+             "Volume estimate %f for price %f less than position %f" volume
+             t.position price;
+           price ) )
+end
+
+module Entry : ENTRY = struct
+  module Csv_writer = Csv_support.Writer (T)
+  include T
+end
+
+module type S = sig
+  type t = (Entry.t Symbol_map.t[@deriving sexp, equal, compare, yojson])
+
+  val from_mytrades :
+    ?avg_trade_prices:float Symbol_map.t ->
+    Mytrades.response ->
+    t * Entry.t Pipe.Reader.t Symbol_map.t * Entry.t Pipe.Writer.t Symbol_map.t
+
+  val update_spots : ?timestamp:Timestamp.t -> t -> float Symbol_map.t -> t
+
+  val command : string * Command.t
+end
+
+module Ledger (* :PNLS *) = struct
+  type t = Entry.t Symbol_map.t [@@deriving sexp, compare, equal, yojson]
+
+  type event = { ledger: t; symbol:Symbol.Enum_or_string.t; entry:Entry.t } [@@deriving sexp, compare, equal, yojson]
+
+  let update_from_books (pnl : t) ~(books : Order_book.Books.t) : t =
+    let f ~key:symbol ~data:t =
+      Option.bind (Symbol.Enum_or_string.to_enum symbol) ~f:(fun symbol ->
+          Order_book.Books.book books symbol
+          |> Option.map ~f:(Entry.update_from_book t) )
+    in
+    Map.filter_mapi pnl ~f
+
+  let update_from_book' ~(book : Order_book.Book.t) =
+    update_from_books ~books:(Order_book.Books.(set_book empty) book)
+
+  let on_trade' ?update_source ?timestamp ?(avg_trade_price : float option)
+      (t : t) ~symbol ~(price : float) ~(side : Side.t) ~(qty : float) : t =
+    Map.update t symbol ~f:(fun t ->
+        let t = Option.value_or_thunk t ~default:(Entry.create ~symbol) in
+        Entry.on_trade ?update_source ?timestamp ?avg_trade_price ~qty ~price
+          ~side t )
+
+  let on_order_events (t : t) (events : Order_events.Order_event.t list) =
+    let events =
+      List.filter events ~f:(fun event ->
+          Order_events.Order_event_type.equal event.type_ `Fill )
+    in
+    List.fold events ~init:t ~f:(fun t event ->
+        let price =
+          Option.value_exn event.avg_execution_price |> Float.of_string
+        in
+        let qty = Option.value_exn event.executed_amount |> Float.of_string in
+        let symbol = event.symbol in
+        let side = event.side in
+        on_trade' t ~symbol ~timestamp:event.timestampms ~side ~price ~qty )
+
+  let on_order_event_response t response =
+    on_order_events t (Order_events.order_events_of_response response)
+
+  let order_event_pipe (cfg : (module Cfg.S)) ~nonce ~(init : t) =
+    Order_events.client ~nonce cfg () >>| fun pipe ->
+    Pipe.folding_map ~init pipe ~f:(fun t event ->
+        match event with
+        | `Ok response ->
+          let t = on_order_event_response t response in
+          (t, `Ok t)
+        | #Order_events.Error.t as e -> (t, e) )
+
+
+  let pipes ?(how = `Sequential) (cfg : (module Cfg.S)) ~(nonce : Nonce.reader)
+      ~(init : t Symbol_map.t) : event Pipe.Reader.t =
+
+   let f ~key:symbol ~data:t =
+   let symbol = Symbol.Enum_or_string.to_enum_exn symbol in
+       Order_events.client ~nonce cfg () >>= fun order_events_pipe ->
+       Pipe.read_all order_events_pipe >> 
+       Deferred.Queue.fold ~init:t order_events_pipe ~f:(fun t event ->
+           match event
+           | `Ok response ->
+             let order_events : Order_events.t list = Order_events.order_events_of_response response in
+             List.fold order_events ~init:t
+             ~f:(fun t event -> on_trade t ~timestamp:event.update_time ~price:event. in
+             (t, `Ok t)
+           | #Order_events.Error.t as e -> (t, e) )
+       >>= fun x ->
+       Order_book.Book.pipe cfg ~symbol () >>| fun book_pipe ->
+       Pipe.folding_map ~init:t book_pipe ~f:(fun t book ->
+           match book with
+           | `Ok book ->
+             let t = update_from_book t book in
+             (t, `Ok t)
+           | #Market_data.Error.t as e -> (t, e) )
+     in
+     Deferred.Map.mapi ~how init ~f*)
   let from_mytrades ?(avg_trade_prices : float Symbol_map.t option)
       (response : Mytrades.response) :
       t Symbol_map.t
@@ -156,7 +252,9 @@ module T = struct
           |> fun avg_trade_prices -> Map.find avg_trade_prices symbol
         in
         let timestamp = trade.timestamp in
-        let t' = on_trade ?avg_trade_price t ~timestamp ~price ~side ~qty in
+        let t' =
+          Entry.on_trade ?avg_trade_price t ~timestamp ~price ~side ~qty
+        in
         ( t',
           reader,
           ( Pipe.write_without_pushback writer t';
@@ -164,7 +262,7 @@ module T = struct
       in
       let f = function
         | None ->
-          let t' = create ~symbol () in
+          let t' = Entry.create ~symbol () in
           let reader, writer = Pipe.create () in
           update (t', reader, writer)
         | Some (t, reader, writer) -> update (t, reader, writer)
@@ -180,56 +278,11 @@ module T = struct
       Map.map result ~f:(fun (_last_t, reader, _writer) -> reader),
       Map.map result ~f:(fun (_last_t, _, writer) -> writer) )
 
-  let update_spots ?timestamp (pnl : t Symbol_map.t)
-      (prices : float Symbol_map.t) =
+  let update_spots ?timestamp (pnl : t) (prices : float Symbol_map.t) =
     Map.fold prices ~init:pnl ~f:(fun ~key:symbol ~data:price pnl ->
         Map.update pnl symbol ~f:(function
-          | None -> create ~symbol ()
-          | Some t -> update_spot ?timestamp t price ) )
-
-  let update_from_book t book =
-    update_spot t
-      (Order_book.Book.market_price book ~side:`Bid ~volume:t.position
-       |> function
-       | Order_book.Price_level.{ price; volume } -> (
-         match Float.equal volume t.position with
-         | true -> price
-         | false ->
-           Log.Global.info
-             "Volume estimate %f for price %f less than position %f" volume
-             t.position price;
-           price ) )
-
-  let update_from_books (pnl : t Symbol_map.t) ~(books : Order_book.Books.t) :
-      t Symbol_map.t =
-    let f ~key:symbol ~data:t =
-      Option.bind (Symbol.Enum_or_string.to_enum symbol) ~f:(fun symbol ->
-          Order_book.Books.book books symbol
-          |> Option.map ~f:(update_from_book t) )
-    in
-    Map.filter_mapi pnl ~f
-
-  let update_from_book' ~(book : Order_book.Book.t) =
-    update_from_books ~books:(Order_book.Books.(set_book empty) book)
-
-  let pipes ?(how = `Sequential) cfg ~nonce ~(init : t Symbol_map.t) =
-    let f ~key:symbol ~data:t =
-      let symbol = Symbol.Enum_or_string.to_enum_exn symbol in
-      Order_events.client ~nonce Order_book.Book.pipe cfg ~symbol ()
-      >>| fun book_pipe ->
-      Pipe.folding_map ~init:t book_pipe ~f:(fun t book ->
-          match book with
-          | `Ok book ->
-            let t = update_from_book t book in
-            (t, `Ok t)
-          | #Market_data.Error.t as e -> (t, e) )
-    in
-    Deferred.Map.mapi ~how init ~f
-end
-
-module TT : S = struct
-  module Csv_writer = Csv_support.Writer (T)
-  include T
+          | None -> Entry.create ~symbol ()
+          | Some t -> Entry.update_spot ?timestamp t price ) )
 
   let timestamp_param =
     Command.Param.(
@@ -261,7 +314,7 @@ module TT : S = struct
         ~doc:"STRING Symbol to compute PNL over. Defaults to all." )
 
   let command : string * Command.t =
-    let operation_name = "pnl" in
+    let operation_name = "ledger" in
     let open Command.Let_syntax in
     ( operation_name,
       Command.async
@@ -299,10 +352,10 @@ module TT : S = struct
                   | `Exactly books
                   | `Fewer books -> (
                     Pipe.close_read book_pipe;
-                    let t, readers, _ =
+                    let t, _readers, _ =
                       from_mytrades ?avg_trade_prices:None response
                     in
-                    update_from_book t ~book:(Queue.last_exn books)
+                    update_from_book' t ~book:(Queue.last_exn books)
                     |> fun symbol_map ->
                     print_s (Symbol_map.sexp_of_t sexp_of_t symbol_map);
 
@@ -331,7 +384,7 @@ module TT : S = struct
                     post_error Rest.Error.sexp_of_post )] )
 end
 
-include TT
+include Ledger
 
 module Test = struct
   let process_trades t trades =

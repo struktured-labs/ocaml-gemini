@@ -128,7 +128,7 @@ module T = struct
         price : Decimal_string.t;
         amount : Decimal_string.t;
         fee : Decimal_string.t;
-        fee_currency : Currency.t
+        fee_currency : Currency.Enum_or_string.t
       }
     [@@deriving sexp, yojson, fields, csv, compare, equal]
   end
@@ -273,6 +273,14 @@ module T = struct
   end
 
   module Csv_of_event = Csv_support.Event_writer (Event_type)
+
+  let order_events_of_response (response : response) =
+    match response with
+    | `Order_event order_event -> [ order_event ]
+    | `Order_events order_events -> order_events
+    | `Heartbeat _
+    | `Subscription_ack _ ->
+      []
 
   let events_of_response (response : response) =
     let csv_of_event = Csv_of_event.empty in

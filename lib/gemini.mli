@@ -19,7 +19,7 @@ module Result = Json.Result
 module Inf_pipe = Inf_pipe
 module Poly_ok = Poly_ok
 module Order_book = Order_book
-module Pnl = Pnl
+module Ledger = Ledger
 
 (** Version v1 of the Gemini REST and web socket apis. *)
 module V1 : sig

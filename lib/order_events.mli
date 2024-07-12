@@ -85,7 +85,7 @@ module Fill : sig
       price : Decimal_string.t;
       amount : Decimal_string.t;
       fee : Decimal_string.t;
-      fee_currency : Currency.t
+      fee_currency : Currency.Enum_or_string.t
     }
   [@@deriving sexp, yojson, fields, csv]
 end
@@ -159,6 +159,8 @@ module Event_type : sig
 
   include Json.S with type t := t
 end
+
+val order_events_of_response : response -> Order_event.t list
 
 include
   Ws.CHANNEL_CLIENT

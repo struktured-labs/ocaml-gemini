@@ -8,7 +8,7 @@ module Inf_pipe = Inf_pipe
 module Poly_ok = Poly_ok
 module V1 = V1
 module Order_book = Order_book
-module Pnl = Pnl
+module Ledger = Ledger
 open V1
 
 let command : Command.t =
@@ -23,5 +23,5 @@ let command : Command.t =
       Order_events.command;
       Notional_volume.command;
       Order_book.command;
-      Pnl.command
+      Ledger.command
     ]
