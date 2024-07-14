@@ -146,7 +146,7 @@ module Entry : ENTRY = struct
 end
 
 module type S = sig
-  type t = (Entry.t Symbol_map.t[@deriving sexp, equal, compare, yojson])
+  type t = (Entry.t Symbol_map.t[@deriving sexp, equal, compare])
 
   val from_mytrades :
     ?avg_trade_prices:float Symbol_map.t ->
@@ -159,9 +159,14 @@ module type S = sig
 end
 
 module Ledger (* :PNLS *) = struct
-  type t = Entry.t Symbol_map.t [@@deriving sexp, compare, equal, yojson]
+  type t = Entry.t Symbol_map.t [@@deriving sexp, compare, equal]
 
-  type event = { ledger: t; symbol:Symbol.Enum_or_string.t; entry:Entry.t } [@@deriving sexp, compare, equal, yojson]
+  type event =
+    { ledger : t;
+      symbol : Symbol.Enum_or_string.t;
+      entry : Entry.t
+    }
+  [@@deriving sexp, compare, equal]
 
   let update_from_books (pnl : t) ~(books : Order_book.Books.t) : t =
     let f ~key:symbol ~data:t =
@@ -197,7 +202,7 @@ module Ledger (* :PNLS *) = struct
 
   let on_order_event_response t response =
     on_order_events t (Order_events.order_events_of_response response)
-
+  (*
   let order_event_pipe (cfg : (module Cfg.S)) ~nonce ~(init : t) =
     Order_events.client ~nonce cfg () >>| fun pipe ->
     Pipe.folding_map ~init pipe ~f:(fun t event ->
@@ -206,11 +211,12 @@ module Ledger (* :PNLS *) = struct
           let t = on_order_event_response t response in
           (t, `Ok t)
         | #Order_events.Error.t as e -> (t, e) )
+*)
 
-
-  let pipes ?(how = `Sequential) (cfg : (module Cfg.S)) ~(nonce : Nonce.reader)
-      ~(init : t Symbol_map.t) : event Pipe.Reader.t =
-
+  (* let pipes ?(how = `Sequential) (cfg : (module Cfg.S)) ~(nonce : Nonce.reader)
+       ~(init : event Symbol_map.t) : event Pipe.Reader.t =
+  *)
+  (*
    let f ~key:symbol ~data:t =
    let symbol = Symbol.Enum_or_string.to_enum_exn symbol in
        Order_events.client ~nonce cfg () >>= fun order_events_pipe ->
@@ -232,7 +238,8 @@ module Ledger (* :PNLS *) = struct
              (t, `Ok t)
            | #Market_data.Error.t as e -> (t, e) )
      in
-     Deferred.Map.mapi ~how init ~f*)
+     Deferred.Map.mapi ~how init ~f
+*)
   let from_mytrades ?(avg_trade_prices : float Symbol_map.t option)
       (response : Mytrades.response) :
       t Symbol_map.t
