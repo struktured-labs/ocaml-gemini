@@ -50,6 +50,8 @@ module type ENTRY = sig
   val update_spot : ?timestamp:Timestamp.t -> t -> float -> t
 
   val update_from_book : t -> Order_book.Book.t -> t
+
+  module Csv_writer : Csv_support.WRITER
 end
 
 module T = struct
@@ -273,8 +275,8 @@ module Ledger (* :PNLS *) = struct
           let reader, writer = Pipe.create () in
           update (t', reader, writer)
         | Some (t, reader, writer) -> update (t, reader, writer)
-      in
-      Core.Map.update symbol_map symbol ~f
+      in failwith ("nyi")
+      (* Core.Map.update symbol_map symbol ~f *)
     in
     let result =
       List.sort response ~compare:(fun x y ->
@@ -366,7 +368,7 @@ module Ledger (* :PNLS *) = struct
                     |> fun symbol_map ->
                     print_s (Symbol_map.sexp_of_t sexp_of_t symbol_map);
 
-                    let csvable : Csv_writer.t =
+                    let csvable =
                       Map.fold ~init:Csv_writer.empty
                         ~f:(fun ~key:_ ~data acc -> Csv_writer.add acc data)
                         symbol_map

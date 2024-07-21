@@ -97,7 +97,7 @@ module List = struct
       type t = elt list [@@deriving sexp, yojson, compare, equal]
 
       let to_string t =
-        List.map ~f:C.to_string t |> String.concat ~sep:(Char.to_string C.sep)
+        Core_list.map ~f:C.to_string t |> String.concat ~sep:(Char.to_string C.sep)
 
       let of_string s = String.split ~on:C.sep s |> List.map ~f:C.of_string
     end
