@@ -50,6 +50,13 @@ module type ENTRY = sig
   val update_spot : ?timestamp:Timestamp.t -> t -> float -> t
 
   val update_from_book : t -> Order_book.Book.t -> t
+
+  val interleave :
+    ?close_on:[ `All_inputs_closed | `Any_input_closed ] ->
+    init:t ->
+    Order_book.Book.t Pipe.Reader.t ->
+    Order_events.response Pipe.Reader.t ->
+    t Pipe.Reader.t Deferred.t
 end
 
 module T = struct
@@ -138,6 +145,55 @@ module T = struct
              "Volume estimate %f for price %f less than position %f" volume
              t.position price;
            price ) )
+
+  type event =
+    [ `Order_event of Order_events.Order_event.t
+    | `Order_book of Order_book.Book.t
+    ]
+  [@@deriving sexp]
+
+  let interleave ?close_on ~init (order_book : Order_book.Book.t Pipe.Reader.t)
+      (order_events_pipe : Order_events.response Pipe.Reader.t) =
+    let order_book =
+      Pipe.map order_book ~f:(fun t -> (`Order_book t :> event))
+    in
+    let order_events_pipe =
+      Pipe.concat_map_list order_events_pipe ~f:(function
+        | `Order_event e -> [ e ]
+        | `Order_events ee -> ee
+        | _ -> [] )
+      |> Pipe.filter_map ~f:(fun (o : Order_events.Order_event.t) ->
+             match Symbol.Enum_or_string.equal o.symbol init.symbol with
+             | true -> Some (`Order_event o :> event)
+             | false -> None )
+    in
+    return @@ Pipe.interleave ?close_on [ order_book; order_events_pipe ]
+    >>| fun pipe ->
+    Pipe.folding_map pipe ~init ~f:(fun t e ->
+        match e with
+        | `Order_book book ->
+          let t = update_from_book t book in
+          (t, t)
+        | `Order_event event -> (
+          match event with
+          | { symbol = _;
+              side;
+              timestamp = _;
+              timestampms;
+              executed_amount;
+              price;
+              _
+            } ->
+            let t =
+              match Option.both executed_amount price with
+              | None -> t
+              | Some (executed_amount, price) ->
+                let price = Float.of_string price in
+                let qty = Float.of_string executed_amount in
+                let timestamp = timestampms in
+                on_trade t ~timestamp ~side ~price ~qty
+            in
+            (t, t) ) )
 end
 
 module Entry : ENTRY = struct
@@ -151,7 +207,7 @@ module type S = sig
   val from_mytrades :
     ?avg_trade_prices:float Symbol_map.t ->
     Mytrades.response ->
-    t * Entry.t Pipe.Reader.t Symbol_map.t * Entry.t Pipe.Writer.t Symbol_map.t
+    t * Entry.t Pipe.Reader.t
 
   val update_spots : ?timestamp:Timestamp.t -> t -> float Symbol_map.t -> t
 
@@ -161,13 +217,14 @@ end
 module Ledger (* :PNLS *) = struct
   type t = Entry.t Symbol_map.t [@@deriving sexp, compare, equal]
 
+  (*
   type event =
     { ledger : t;
       symbol : Symbol.Enum_or_string.t;
       entry : Entry.t
     }
   [@@deriving sexp, compare, equal]
-
+*)
   let update_from_books (pnl : t) ~(books : Order_book.Books.t) : t =
     let f ~key:symbol ~data:t =
       Option.bind (Symbol.Enum_or_string.to_enum symbol) ~f:(fun symbol ->
@@ -202,49 +259,9 @@ module Ledger (* :PNLS *) = struct
 
   let on_order_event_response t response =
     on_order_events t (Order_events.order_events_of_response response)
-  (*
-  let order_event_pipe (cfg : (module Cfg.S)) ~nonce ~(init : t) =
-    Order_events.client ~nonce cfg () >>| fun pipe ->
-    Pipe.folding_map ~init pipe ~f:(fun t event ->
-        match event with
-        | `Ok response ->
-          let t = on_order_event_response t response in
-          (t, `Ok t)
-        | #Order_events.Error.t as e -> (t, e) )
-*)
 
-  (* let pipes ?(how = `Sequential) (cfg : (module Cfg.S)) ~(nonce : Nonce.reader)
-       ~(init : event Symbol_map.t) : event Pipe.Reader.t =
-  *)
-  (*
-   let f ~key:symbol ~data:t =
-   let symbol = Symbol.Enum_or_string.to_enum_exn symbol in
-       Order_events.client ~nonce cfg () >>= fun order_events_pipe ->
-       Pipe.read_all order_events_pipe >> 
-       Deferred.Queue.fold ~init:t order_events_pipe ~f:(fun t event ->
-           match event
-           | `Ok response ->
-             let order_events : Order_events.t list = Order_events.order_events_of_response response in
-             List.fold order_events ~init:t
-             ~f:(fun t event -> on_trade t ~timestamp:event.update_time ~price:event. in
-             (t, `Ok t)
-           | #Order_events.Error.t as e -> (t, e) )
-       >>= fun x ->
-       Order_book.Book.pipe cfg ~symbol () >>| fun book_pipe ->
-       Pipe.folding_map ~init:t book_pipe ~f:(fun t book ->
-           match book with
-           | `Ok book ->
-             let t = update_from_book t book in
-             (t, `Ok t)
-           | #Market_data.Error.t as e -> (t, e) )
-     in
-     Deferred.Map.mapi ~how init ~f
-*)
   let from_mytrades ?(avg_trade_prices : float Symbol_map.t option)
-      (response : Mytrades.response) :
-      t Symbol_map.t
-      * t Pipe.Reader.t Symbol_map.t
-      * t Pipe.Writer.t Symbol_map.t =
+      (response : Mytrades.response) : t * Entry.t Pipe.Reader.t =
     let init : _ Symbol_map.t = Symbol_map.empty in
     let fold_f
         (symbol_map : (t * t Pipe.Reader.t * t Pipe.Writer.t) Symbol_map.t)
@@ -269,9 +286,9 @@ module Ledger (* :PNLS *) = struct
       in
       let f = function
         | None ->
-          let t' = Entry.create ~symbol () in
+          let entry = Entry.create ~symbol () in
           let reader, writer = Pipe.create () in
-          update (t', reader, writer)
+          update (entry, reader, writer)
         | Some (t, reader, writer) -> update (t, reader, writer)
       in
       Core.Map.update symbol_map symbol ~f
@@ -282,8 +299,7 @@ module Ledger (* :PNLS *) = struct
       |> List.fold ~init ~f:fold_f
     in
     ( Map.map result ~f:(fun (last_t, _reader, _writer) -> last_t),
-      Map.map result ~f:(fun (_last_t, reader, _writer) -> reader),
-      Map.map result ~f:(fun (_last_t, _, writer) -> writer) )
+      Map.map result ~f:(fun (_last_t, reader, _writer) -> reader) )
 
   let update_spots ?timestamp (pnl : t) (prices : float Symbol_map.t) =
     Map.fold prices ~init:pnl ~f:(fun ~key:symbol ~data:price pnl ->
