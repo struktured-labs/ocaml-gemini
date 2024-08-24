@@ -259,6 +259,28 @@ module T = struct
     in
     ( Map.map result ~f:(fun (last_t, _reader, _writer) -> last_t),
       Map.map result ~f:(fun (_last_t, reader, _writer) -> reader) )
+
+  let from_mytrades_pipe ?(how = `Sequential) ?close_on ?init ?avg_trade_prices
+      (module Cfg : Cfg.S) order_events response =
+    let t, t_pipe = from_mytrades ?init ?avg_trade_prices response in
+    let symbols = Map.keys t in
+    let order_events =
+      List.folding_map ~init:order_events symbols ~f:(fun oe symbol ->
+          let oe, oe' = Pipe.fork ~pushback_uses:`Fast_consumer_only oe in
+          (oe', (symbol, oe)) )
+      |> Symbol_map.of_alist_exn
+    in
+    Deferred.Map.mapi ~how t ~f:(fun ~key:enum_or_str_symbol ~data:t ->
+        let symbol = Symbol.Enum_or_string.to_enum_exn enum_or_str_symbol in
+        Order_book.Book.pipe_exn (module Cfg) ~symbol () >>= fun order_book ->
+        interleave ~init:t ?close_on order_book
+          (Map.find_exn order_events enum_or_str_symbol) )
+    >>| fun t_pipe' ->
+    Map.merge t_pipe t_pipe' ~f:(fun ~key:_ v ->
+        match v with
+        | `Both (x, y) -> Pipe.concat [ x; y ] |> Option.some
+        | `Left x -> Some x
+        | `Right y -> Some y )
 end
 
 module Entry : ENTRY = struct
