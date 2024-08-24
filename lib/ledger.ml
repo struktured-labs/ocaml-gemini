@@ -57,6 +57,10 @@ module type ENTRY = sig
     Order_book.Book.t Pipe.Reader.t ->
     Order_events.response Pipe.Reader.t ->
     t Pipe.Reader.t Deferred.t
+  (* [interleave ?close_on init book events] produces a pipe of entry updates starting with [init], pushing
+      new entries on the pipe for [t.symbol] by either public order [book] updates (which
+      affect unrealized pnl) or the private order [events] pipe which affect both realize and unrealized.
+  *)
 
   val from_mytrades :
     ?init:t Symbol_map.t ->
@@ -275,7 +279,7 @@ module type S = sig
   val command : string * Command.t
 end
 
-module Ledger (* :PNLS *) = struct
+module Ledger (*: S *) = struct
   type t = Entry.t Symbol_map.t [@@deriving sexp, compare, equal]
 
   (*
@@ -320,47 +324,6 @@ module Ledger (* :PNLS *) = struct
 
   let on_order_event_response t response =
     on_order_events t (Order_events.order_events_of_response response)
-
-  let from_mytrades ?(avg_trade_prices : float Symbol_map.t option)
-      (response : Mytrades.response) : t * Entry.t Pipe.Reader.t =
-    let init : _ Symbol_map.t = Symbol_map.empty in
-    let fold_f
-        (symbol_map : (t * t Pipe.Reader.t * t Pipe.Writer.t) Symbol_map.t)
-        (trade : Mytrades.trade) =
-      let symbol : Symbol.Enum_or_string.t = trade.symbol in
-      let update (t, reader, writer) =
-        let price = Float.of_string trade.price in
-        let side = trade.type_ in
-        let qty = Float.of_string trade.amount in
-        let avg_trade_price =
-          Option.value ~default:Symbol_map.empty avg_trade_prices
-          |> fun avg_trade_prices -> Map.find avg_trade_prices symbol
-        in
-        let timestamp = trade.timestamp in
-        let t' =
-          Entry.on_trade ?avg_trade_price t ~timestamp ~price ~side ~qty
-        in
-        ( t',
-          reader,
-          ( Pipe.write_without_pushback writer t';
-            writer ) )
-      in
-      let f = function
-        | None ->
-          let entry = Entry.create ~symbol () in
-          let reader, writer = Pipe.create () in
-          update (entry, reader, writer)
-        | Some (t, reader, writer) -> update (t, reader, writer)
-      in
-      Core.Map.update symbol_map symbol ~f
-    in
-    let result =
-      List.sort response ~compare:(fun x y ->
-          Timestamp.compare x.timestampms y.timestampms )
-      |> List.fold ~init ~f:fold_f
-    in
-    ( Map.map result ~f:(fun (last_t, _reader, _writer) -> last_t),
-      Map.map result ~f:(fun (_last_t, reader, _writer) -> reader) )
 
   let update_spots ?timestamp (pnl : t) (prices : float Symbol_map.t) =
     Map.fold prices ~init:pnl ~f:(fun ~key:symbol ~data:price pnl ->
@@ -436,8 +399,8 @@ module Ledger (* :PNLS *) = struct
                   | `Exactly books
                   | `Fewer books -> (
                     Pipe.close_read book_pipe;
-                    let t, _readers, _ =
-                      from_mytrades ?avg_trade_prices:None response
+                    let t, readers =
+                      Entry.from_mytrades ?avg_trade_prices:None response
                     in
                     update_from_book' t ~book:(Queue.last_exn books)
                     |> fun symbol_map ->
