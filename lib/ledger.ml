@@ -76,6 +76,18 @@ module type ENTRY = sig
      If any trade occurs that would end up in a short position of a
      particular symbol, the symbol map is then used to assume a prior
      buy using the price as given in the map. *)
+
+  val from_mytrades_pipe :
+    ?symbols: Symbol.t list ->
+    ?init:t Symbol_map.t ->
+    ?timestamp: Timestamp.t ->
+    ?how:Monad_sequence.how ->
+    ?close_on:[ `All_inputs_closed | `Any_input_closed ] ->
+    ?avg_trade_prices:float Symbol_map.t ->
+    ?nonce:Nonce.reader ->
+    (module Cfg.S) ->
+    Order_events.response Pipe.Reader.t ->
+    t Pipe.Reader.t Symbol_map.t Deferred.t
 end
 
 module T = struct
@@ -216,7 +228,7 @@ module T = struct
 
   let from_mytrades ?(init : t Symbol_map.t option)
       ?(avg_trade_prices : float Symbol_map.t option)
-      (response : Mytrades.response) :
+      (response : Mytrades.trade list) :
       t Symbol_map.t * t Pipe.Reader.t Symbol_map.t =
     let init : _ Symbol_map.t = Option.value init ~default:Symbol_map.empty in
     let fold_f
@@ -260,27 +272,27 @@ module T = struct
     ( Map.map result ~f:(fun (last_t, _reader, _writer) -> last_t),
       Map.map result ~f:(fun (_last_t, reader, _writer) -> reader) )
 
-  let from_mytrades_pipe ?(how = `Sequential) ?close_on ?init ?avg_trade_prices
-      (module Cfg : Cfg.S) order_events response =
-    let t, t_pipe = from_mytrades ?init ?avg_trade_prices response in
-    let symbols = Map.keys t in
+  let from_mytrades_pipe ?symbols ?timestamp ?(how = `Sequential) ?close_on ?init ?avg_trade_prices ?nonce
+      (module Cfg : Cfg.S) order_events =
+            (match nonce with  
+            | Some nonce -> return nonce
+            | None -> Nonce.File.default ()) >>= fun nonce ->
+    let symbols = Option.value symbols ~default:(Symbol.all |> List.map ~f:Symbol.Enum_or_string.of_enum) in
     let order_events =
       List.folding_map ~init:order_events symbols ~f:(fun oe symbol ->
           let oe, oe' = Pipe.fork ~pushback_uses:`Fast_consumer_only oe in
           (oe', (symbol, oe)) )
       |> Symbol_map.of_alist_exn
     in
-    Deferred.Map.mapi ~how t ~f:(fun ~key:enum_or_str_symbol ~data:t ->
+    Deferred.Map.mapi ~how order_events ~f:(fun ~key:enum_or_str_symbol ~data:order_events ->
         let symbol = Symbol.Enum_or_string.to_enum_exn enum_or_str_symbol in
         Order_book.Book.pipe_exn (module Cfg) ~symbol () >>= fun order_book ->
-        interleave ~init:t ?close_on order_book
-          (Map.find_exn order_events enum_or_str_symbol) )
-    >>| fun t_pipe' ->
-    Map.merge t_pipe t_pipe' ~f:(fun ~key:_ v ->
-        match v with
-        | `Both (x, y) -> Pipe.concat [ x; y ] |> Option.some
-        | `Left x -> Some x
-        | `Right y -> Some y )
+         Mytrades.post (module Cfg) nonce Mytrades.{symbol;timestamp;limit_trades=None} >>= fun trades ->
+         let init, trades_by_symbol = from_mytrades ?init ?avg_trade_prices (Poly_ok.ok_exn trades) in
+         let init = Map.find init enum_or_str_symbol |> Option.value ~default:(create ~symbol:enum_or_str_symbol ()) in
+         let trade_pipe = Map.find trades_by_symbol enum_or_str_symbol |> Option.value_or_thunk ~default:Pipe.empty in
+         interleave ~init ?close_on order_book order_events >>| fun interleaved -> Pipe.concat [trade_pipe;interleaved])
+  
 end
 
 module Entry : ENTRY = struct
@@ -394,40 +406,10 @@ module Ledger (*: S *) = struct
           and limit_trades = limit_trades_param
           and symbol = symbol_param in
           fun () ->
-            let symbols, is_one_symbol =
-              Option.value_map symbol
-                ~f:(fun x -> ([ x ], true))
-                ~default:(Symbol.all, false)
-            in
+            let symbols= Option.value_map ~default:Symbol.all symbol ~f:List.singleton in
+            let num_symbols = List.length symbols in
             let config = Cfg.or_default config in
-            Deferred.List.iter ~how:`Sequential symbols ~f:(fun symbol ->
-                let request : Mytrades.request =
-                  Mytrades.{ timestamp; limit_trades; symbol }
-                in
-                Nonce.File.(pipe ~init:default_filename) () >>= fun nonce ->
-                let nonce, writer_nonce =
-                  Inf_pipe.fork ~pushback_uses:`Fast_consumer_only nonce
-                in
-                Mytrades.post config nonce request >>= function
-                | `Ok response -> (
-                  Order_book.Book.pipe_exn config ~symbol ()
-                  >>= fun book_pipe ->
-                  Pipe.read_exactly ~num_values:10 book_pipe >>= function
-                  | `Eof ->
-                    failwithf
-                      "Failed to read market data to get a spot price for \
-                       symbol %s"
-                      (Symbol.to_string symbol) ()
-                  | `Exactly books
-                  | `Fewer books -> (
-                    Pipe.close_read book_pipe;
-                    let t, readers =
-                      Entry.from_mytrades ?avg_trade_prices:None response
-                    in
-                    update_from_book' t ~book:(Queue.last_exn books)
-                    |> fun symbol_map ->
-                    print_s (Symbol_map.sexp_of_t sexp_of_t symbol_map);
-
+            Deferred.List.iteri ~how:`Sequential symbols ~f:(fun i symbol ->
                     let csvable : Csv_writer.t =
                       Map.fold ~init:Csv_writer.empty
                         ~f:(fun ~key:_ ~data acc -> Csv_writer.add acc data)
@@ -443,7 +425,7 @@ module Ledger (*: S *) = struct
                     in
                     let _ : int = Csv_writer.write ?dir:None ~name csvable in
                     Log.Global.flushed () >>= fun () ->
-                    match is_one_symbol with
+                    match Int.equal (num_symbols - 1) i with
                     | true -> Deferred.unit
                     | false -> Clock.after (Time_float.Span.of_int_sec 1) ) )
                 | #Rest.Error.post as post_error ->
