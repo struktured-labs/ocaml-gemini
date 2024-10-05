@@ -19,8 +19,8 @@
               uri
               yojson
               zarith
-              mirage-crypto
               hex
+              digestif
               cohttp_async_websocket
   )
 )

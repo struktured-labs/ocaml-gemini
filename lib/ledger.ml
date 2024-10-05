@@ -396,7 +396,7 @@ module Ledger (*: S *) = struct
 
   let command : string * Command.t =
     let operation_name = "ledger" in
-    let open Command.Let_syntax in
+    let open Command.Let_syntax in failwith "byi" (*
     ( operation_name,
       Command.async
         ~summary:(Path.to_summary ~has_subnames:false [ operation_name ])
@@ -432,7 +432,7 @@ module Ledger (*: S *) = struct
                   failwiths ~here:[%here]
                     (sprintf "post for operation %S failed"
                        (Path.to_string [ operation_name ]) )
-                    post_error Rest.Error.sexp_of_post )] )
+                    post_error Rest.Error.sexp_of_post )] ) *)
 end
 
 include Ledger

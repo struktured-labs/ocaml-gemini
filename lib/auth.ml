@@ -1,22 +1,22 @@
 (** An authentication token type. *)
 type t =
-  [ `Base64 of Cstruct.t
+  [ `Base64 of string
   | Hex.t
   ]
 
 (** Given a base64 payload, produce an authentication token. *)
 let of_payload s : [< t > `Base64 ] =
   let base64 = Base64.encode_exn s in
-  let cstruct = Cstruct.of_string base64 in
-  `Base64 cstruct
+  `Base64 base64
 
 let hmac_sha384 ~api_secret (`Base64 payload) : [< t > `Hex ] =
-  let key = Cstruct.of_string api_secret in
-  Mirage_crypto.Hash.SHA384.hmac ~key payload |> Hex.of_cstruct
+        (*  let key = Cstruct.of_string api_secret in*)
+  let key = api_secret in
+  Digestif.SHA384.hmac_string ~key  payload |> Digestif.SHA384.to_hex |> fun h -> (`Hex h)
 
 (** Produce a string representation of the authentication token. *)
 let to_string : [< t ] -> string = function
-  | `Base64 cstruct -> Cstruct.to_string cstruct
+  | `Base64 cstruct -> (*Cstruct.to_string cstruct *) cstruct
   | `Hex hex -> hex
 
 (** Encode an authentication token as a gemini payload with an http header
