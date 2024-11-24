@@ -3,6 +3,7 @@ open V1
 module Currency_map = Map.Make (Currency.Enum_or_string)
 module Symbol_map = Map.Make (Symbol.Enum_or_string)
 
+
 module Update_source = struct
   module T = struct
     type t =
@@ -295,7 +296,7 @@ module T = struct
   
 end
 
-module Entry : ENTRY = struct
+module Entry (*: ENTRY *) = struct
   module Csv_writer = Csv_support.Writer (T)
   include T
 end
@@ -401,15 +402,16 @@ module Ledger (*: S *) = struct
       Command.async
         ~summary:(Path.to_summary ~has_subnames:false [ operation_name ])
         [%map_open
-          let timestamp = timestamp_param
+          let _timestamp = timestamp_param
           and config = Cfg.param
-          and limit_trades = limit_trades_param
+          and _limit_trades = limit_trades_param
           and symbol = symbol_param in
           fun () ->
             let symbols= Option.value_map ~default:Symbol.all symbol ~f:List.singleton in
-            let num_symbols = List.length symbols in
-            let config = Cfg.or_default config in
-            Deferred.List.iteri ~how:`Sequential symbols ~f:(fun i symbol ->
+            let _num_symbols = List.length symbols in
+            let _config = Cfg.or_default config in
+            failwith "nyi"])
+(*            Deferred.List.iteri ~how:`Sequential symbols ~f:(fun i symbol ->
                     let csvable : Csv_writer.t =
                       Map.fold ~init:Csv_writer.empty
                         ~f:(fun ~key:_ ~data acc -> Csv_writer.add acc data)
@@ -432,7 +434,7 @@ module Ledger (*: S *) = struct
                   failwiths ~here:[%here]
                     (sprintf "post for operation %S failed"
                        (Path.to_string [ operation_name ]) )
-                    post_error Rest.Error.sexp_of_post )] )
+                    post_error Rest.Error.sexp_of_post )] ) *)
 end
 
 include Ledger
