@@ -9,6 +9,8 @@ let ok_exn ?(message = "not_ok") ?here ?sexp_of_error (x : [> 'a ok ]) =
       failwiths message ~here:(Option.value here ~default:[%here]) error f
     | None -> failwith message )
 
+ let ok_exn' t = ok_exn t
+    
 let ok_or_none (x : [> 'a ok ]) =
   match x with
   | `Ok x -> Some x

@@ -119,6 +119,7 @@ module T = struct
   let rec on_trade ?(update_source = `Trade) ?timestamp
       ?(avg_trade_price : float option) t ~(price : float) ~(side : Side.t)
       ~(qty : float) : t =
+    Log.Global.info "on_trade: price=%f side=%s qty=%f"  price (Side.to_string side) qty;
     let timestamp = Option.value_or_thunk timestamp ~default:Timestamp.now in
     let position_sign =
       match side with
@@ -138,7 +139,10 @@ module T = struct
       on_trade ~update_source ~timestamp ~avg_trade_price ~price ~side ~qty t
     | false ->
       let notional_sign : float = position_sign *. -1.0 in
-      let notional = (qty *. price) +. (notional_sign *. t.notional) in
+      let package_price = qty *. price in
+      let signed_notional = notional_sign *. package_price in
+      let notional = signed_notional +. t.notional in
+      Log.Global.info "package_price=%f t.notional=%f notional_sign=%f notional=%f signed_t_notitional=%f" package_price t.notional notional_sign notional signed_notional;
       { t with
         spot = price;
         notional;
@@ -184,7 +188,7 @@ module T = struct
     ]
   [@@deriving sexp]
 
-  let interleave ?close_on ~init (order_book : Order_book.Book.t Pipe.Reader.t)
+  let interleave ~init (order_book : Order_book.Book.t Pipe.Reader.t)
       (order_events_pipe : Order_events.response Pipe.Reader.t) =
     let order_book =
       Pipe.map order_book ~f:(fun t -> (`Order_book t :> event))
@@ -199,7 +203,7 @@ module T = struct
              | true -> Some (`Order_event o :> event)
              | false -> None )
     in
-    return @@ Pipe.interleave ?close_on [ order_book; order_events_pipe ]
+    return @@ Pipe_ext.weave order_book order_events_pipe
     >>| fun pipe ->
     Pipe.folding_map pipe ~init ~f:(fun t e ->
         match e with
@@ -273,9 +277,9 @@ module T = struct
     ( Map.map result ~f:(fun (last_t, _reader, _writer) -> last_t),
       Map.map result ~f:(fun (_last_t, reader, _writer) -> reader) )
 
-  let from_mytrades_pipe ?symbols ?timestamp ?(how = `Sequential) ?close_on ?init ?avg_trade_prices ?nonce
+  let from_mytrades_pipe ?symbols ?timestamp ?(how = `Sequential) ?init ?avg_trade_prices ?nonce
       (module Cfg : Cfg.S) order_events =
-            (match nonce with  
+            (match nonce with
             | Some nonce -> return nonce
             | None -> Nonce.File.default ()) >>= fun nonce ->
     let symbols = Option.value symbols ~default:(Symbol.all |> List.map ~f:Symbol.Enum_or_string.of_enum) in
@@ -292,7 +296,7 @@ module T = struct
          let init, trades_by_symbol = from_mytrades ?init ?avg_trade_prices (Poly_ok.ok_exn trades) in
          let init = Map.find init enum_or_str_symbol |> Option.value ~default:(create ~symbol:enum_or_str_symbol ()) in
          let trade_pipe = Map.find trades_by_symbol enum_or_str_symbol |> Option.value_or_thunk ~default:Pipe.empty in
-         interleave ~init ?close_on order_book order_events >>| fun interleaved -> Pipe.concat [trade_pipe;interleaved])
+         interleave ~init order_book order_events >>| Pipe_ext.weave trade_pipe)
   
 end
 
@@ -366,6 +370,24 @@ module Ledger (*: S *) = struct
           | None -> Entry.create ~symbol ()
           | Some t -> Entry.update_spot ?timestamp t price ) )
 
+  let ok_exn' x = Poly_ok.ok_exn x
+  let with_csv_writer ?(how=`Parallel) ?dir ?timestamp ?avg_trade_prices config symbols =
+    Nonce.File.default () >>= fun nonce ->
+    Order_events.client config ~nonce () >>= fun order_events -> (Pipe.map order_events ~f:ok_exn' |> return) >>= fun order_events ->
+    T.from_mytrades_pipe ~how ?timestamp ?avg_trade_prices ~symbols ~nonce config order_events >>=
+    fun symbol_to_reader ->
+      Deferred.Map.mapi ~how symbol_to_reader ~f:
+        (fun ~key:symbol ~data:reader ->
+          let name = sprintf "pnl.%s" (Symbol.Enum_or_string.to_string symbol) in
+          let csv_read entry = 
+            let csv = Entry.Csv_writer.(add empty entry) in
+            let num_written = Entry.Csv_writer.write ?dir ~name csv in
+            Log.Global.info "wrote %d record(s) to %s" num_written name;
+            return entry in
+          Pipe.map reader ~f:csv_read |> return
+        )
+
+
   let timestamp_param =
     Command.Param.(
       flag "-ts"
@@ -390,11 +412,23 @@ module Ledger (*: S *) = struct
         | None -> failwithf "Invalid symbol %s" s () )
     in
 
+    
     Command.Param.(
       flag "--symbol"
         (optional (Command.Arg_type.create symbol_of_string))
         ~doc:"STRING Symbol to compute PNL over. Defaults to all." )
+(**
+Command does what?
 
+- Computes pnl for given set of symbols (or all)
+- Does so by getting latest spot prices (from order book)
+- Connects to order event pipe, trade pipe, trade list
+- Produces time order pnl entries up to present moment (or let it run and produce a stream)
+- TODO: capture trades > 500 with multiple requests
+- Allow synthetic trades or estimates of avg if needed by calculation.
+  (for wallet xfers with unknown purchase prices)
+
+*)
   let command : string * Command.t =
     let operation_name = "ledger" in
     let open Command.Let_syntax in
@@ -407,34 +441,11 @@ module Ledger (*: S *) = struct
           and _limit_trades = limit_trades_param
           and symbol = symbol_param in
           fun () ->
-            let symbols= Option.value_map ~default:Symbol.all symbol ~f:List.singleton in
-            let _num_symbols = List.length symbols in
-            let _config = Cfg.or_default config in
-            failwith "nyi"])
-(*            Deferred.List.iteri ~how:`Sequential symbols ~f:(fun i symbol ->
-                    let csvable : Csv_writer.t =
-                      Map.fold ~init:Csv_writer.empty
-                        ~f:(fun ~key:_ ~data acc -> Csv_writer.add acc data)
-                        symbol_map
-                    in
-                    Inf_pipe.read writer_nonce >>= fun request_id ->
-                    let name =
-                      sprintf "pnl.%s.%d"
-                        ( Symbol.to_currency symbol `Buy
-                        |> Currency.Enum_or_string.to_string |> String.lowercase
-                        )
-                        request_id
-                    in
-                    let _ : int = Csv_writer.write ?dir:None ~name csvable in
-                    Log.Global.flushed () >>= fun () ->
-                    match Int.equal (num_symbols - 1) i with
-                    | true -> Deferred.unit
-                    | false -> Clock.after (Time_float.Span.of_int_sec 1) ) )
-                | #Rest.Error.post as post_error ->
-                  failwiths ~here:[%here]
-                    (sprintf "post for operation %S failed"
-                       (Path.to_string [ operation_name ]) )
-                    post_error Rest.Error.sexp_of_post )] ) *)
+            let symbols = Option.value_map ~default:Symbol.all symbol ~f:List.singleton in
+            let symbols = List.map ~f:Symbol.Enum_or_string.of_enum symbols in
+            let config = Cfg.or_default config in
+          with_csv_writer config symbols >>= fun symbol_reader -> 
+            Deferred.Map.iter ~how:`Sequential symbol_reader ~f:(fun reader -> Pipe.read_exactly ~num_values:20 reader >>= fun _ -> Deferred.unit)])
 end
 
 include Ledger

@@ -184,6 +184,8 @@ module Currency = struct
       | `Ern
       | `Amp
       | `Ctx
+      | `Pnut
+      | `Chillguy
       ]
     [@@deriving sexp, enumerate, equal, compare]
   end
@@ -239,6 +241,9 @@ module Symbol = struct
       | `Zbcusd
       | `Avaxusd
       | `Jamusd
+      | `Pnutusd
+      | `Rndrusd
+      | `Chillguyusd
       ]
     [@@deriving sexp, enumerate, equal, compare]
   end

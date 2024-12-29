@@ -20,6 +20,7 @@ module Inf_pipe = Inf_pipe
 module Poly_ok = Poly_ok
 module Order_book = Order_book
 module Ledger = Ledger
+module Pipe_ext = Pipe_ext
 
 (** Version v1 of the Gemini REST and web socket apis. *)
 module V1 : sig
