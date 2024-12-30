@@ -203,7 +203,7 @@ module T = struct
              | true -> Some (`Order_event o :> event)
              | false -> None )
     in
-    return @@ Pipe_ext.weave order_book order_events_pipe
+    return @@ Pipe_ext.collide order_book order_events_pipe
     >>| fun pipe ->
     Pipe.folding_map pipe ~init ~f:(fun t e ->
         match e with
@@ -296,7 +296,7 @@ module T = struct
          let init, trades_by_symbol = from_mytrades ?init ?avg_trade_prices (Poly_ok.ok_exn trades) in
          let init = Map.find init enum_or_str_symbol |> Option.value ~default:(create ~symbol:enum_or_str_symbol ()) in
          let trade_pipe = Map.find trades_by_symbol enum_or_str_symbol |> Option.value_or_thunk ~default:Pipe.empty in
-         interleave ~init order_book order_events >>| Pipe_ext.weave trade_pipe)
+         interleave ~init order_book order_events >>| Pipe_ext.collide trade_pipe)
   
 end
 
@@ -376,16 +376,16 @@ module Ledger (*: S *) = struct
     Order_events.client config ~nonce () >>= fun order_events -> (Pipe.map order_events ~f:ok_exn' |> return) >>= fun order_events ->
     T.from_mytrades_pipe ~how ?timestamp ?avg_trade_prices ~symbols ~nonce config order_events >>=
     fun symbol_to_reader ->
-      Deferred.Map.mapi ~how symbol_to_reader ~f:
+      let result = Deferred.Map.mapi ~how symbol_to_reader ~f:
         (fun ~key:symbol ~data:reader ->
           let name = sprintf "pnl.%s" (Symbol.Enum_or_string.to_string symbol) in
           let csv_read entry = 
             let csv = Entry.Csv_writer.(add empty entry) in
             let num_written = Entry.Csv_writer.write ?dir ~name csv in
             Log.Global.info "wrote %d record(s) to %s" num_written name;
-            return entry in
+            entry in
           Pipe.map reader ~f:csv_read |> return
-        )
+        ) in result
 
 
   let timestamp_param =
@@ -445,7 +445,13 @@ Command does what?
             let symbols = List.map ~f:Symbol.Enum_or_string.of_enum symbols in
             let config = Cfg.or_default config in
           with_csv_writer config symbols >>= fun symbol_reader -> 
-            Deferred.Map.iter ~how:`Sequential symbol_reader ~f:(fun reader -> Pipe.read_exactly ~num_values:20 reader >>= fun _ -> Deferred.unit)])
+            Deferred.Map.iter ~how:`Sequential symbol_reader ~f:(fun reader -> 
+              let f = function 
+              | T.{update_source=`Market_data;_} -> true 
+              | _ -> false
+              in
+              Pipe.filter reader ~f |>
+              Pipe.read_exactly ?consumer:None ~num_values:1 >>= fun _ -> Deferred.unit)])
 end
 
 include Ledger

@@ -24,5 +24,6 @@ let command : Command.t =
       Order_events.command;
       Notional_volume.command;
       Order_book.command;
-      Ledger.command
+      Ledger.command;
+      Symbols.command;
     ]
