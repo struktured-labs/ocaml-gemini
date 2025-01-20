@@ -1,6 +1,6 @@
 type 'a ok = [ `Ok of 'a ]
 
-let ok_exn ?(message = "not_ok") ?here ?sexp_of_error (x : [> 'a ok ]) =
+let ok_exn ?(message = "not ok") ?here ?sexp_of_error (x : [> 'a ok ]) =
   match x with
   | `Ok x -> x
   | error -> (
