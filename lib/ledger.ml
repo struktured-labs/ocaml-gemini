@@ -52,13 +52,13 @@ module type ENTRY = sig
 
   val update_from_book : t -> Order_book.Book.t -> t
 
-  val interleave :
+  val combine :
     ?close_on:[ `All_inputs_closed | `Any_input_closed ] ->
     init:t ->
     Order_book.Book.t Pipe.Reader.t ->
     Order_events.response Pipe.Reader.t ->
     t Pipe.Reader.t Deferred.t
-  (* [interleave ?close_on init book events] produces a pipe of entry updates starting with [init], pushing
+  (* [combine ?close_on init book events] produces a pipe of entry updates starting with [init], pushing
       new entries on the pipe for [t.symbol] by either public order [book] updates (which
       affect unrealized pnl) or the private order [events] pipe which affect both realize and unrealized.
   *)
