@@ -25,8 +25,12 @@ module type ENTRY = sig
       spot : float;
       pnl_spot : float;
       notional : float;
+      avg_buy_price: float;
+      avg_sell_price: float;
       update_time : Timestamp.t;
-      update_source : Update_source.t
+      update_source : Update_source.t;
+      total_buy_qty: float;
+      total_sell_qty: float;
     }
   [@@deriving sexp, compare, equal, fields, csv]
 
@@ -53,12 +57,13 @@ module type ENTRY = sig
   val update_from_book : t -> Order_book.Book.t -> t
 
   val combine :
-    ?close_on:[ `All_inputs_closed | `Any_input_closed ] ->
     init:t ->
+    ?num_values: int ->
+    ?behavior: [`Alternate | `Priority | `Random] ->
     Order_book.Book.t Pipe.Reader.t ->
     Order_events.response Pipe.Reader.t ->
     t Pipe.Reader.t Deferred.t
-  (* [combine ?close_on init book events] produces a pipe of entry updates starting with [init], pushing
+  (* [combine init ?num_values ?behavior book events] produces a pipe of entry updates starting with [init], pushing
       new entries on the pipe for [t.symbol] by either public order [book] updates (which
       affect unrealized pnl) or the private order [events] pipe which affect both realize and unrealized.
   *)
@@ -99,9 +104,13 @@ module T = struct
       spot : float;
       pnl_spot : float;
       notional : float;
+      avg_buy_price: float;
+      avg_sell_price: float;
       update_time : Timestamp.t;
-      update_source : Update_source.t
-    }
+      update_source : Update_source.t;
+      total_buy_qty: float;
+      total_sell_qty: float;
+  }
   [@@deriving sexp, compare, equal, fields, csv]
 
   let create ?(notional = 0.0) ?(update_source = `Market_data) ?update_time
@@ -112,8 +121,12 @@ module T = struct
       notional;
       pnl_spot = 0.;
       position = 0.;
+      avg_buy_price= 0.;
+      avg_sell_price=0.;
       update_source;
-      update_time = Option.value_or_thunk update_time ~default:Timestamp.now
+      update_time = Option.value_or_thunk update_time ~default:Timestamp.now;
+      total_buy_qty=0.;
+      total_sell_qty=0.;
     }
 
   let rec on_trade ?(update_source = `Trade) ?timestamp
@@ -142,6 +155,14 @@ module T = struct
       let package_price = qty *. price in
       let signed_notional = notional_sign *. package_price in
       let notional = signed_notional +. t.notional in
+      let total_buy_qty, total_sell_qty =
+       match side with 
+       | `Buy -> (t.total_buy_qty+.qty), t.total_sell_qty
+       | `Sell -> t.total_buy_qty, (t.total_sell_qty+.qty) in
+       let avg_buy_price, avg_sell_price = 
+        match side with
+        | `Buy -> (t.avg_buy_price *. t.total_buy_qty +. price *. qty) /. total_buy_qty, t.avg_sell_price 
+        | `Sell -> t.avg_buy_price, (t.avg_sell_price *. t.total_sell_qty +. price *. qty) /. total_sell_qty in
       Log.Global.info "package_price=%f t.notional=%f notional_sign=%f notional=%f signed_t_notitional=%f" package_price t.notional notional_sign notional signed_notional;
       { t with
         spot = price;
@@ -150,7 +171,11 @@ module T = struct
         position;
         pnl = pnl_spot +. notional;
         update_time = timestamp;
-        update_source
+        update_source;
+        total_buy_qty;
+        total_sell_qty;
+        avg_buy_price;
+        avg_sell_price
       } )
     |> fun t ->
     let sexp = sexp_of_t t in
