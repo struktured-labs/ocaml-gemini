@@ -31,6 +31,7 @@ module type ENTRY = sig
       update_source : Update_source.t;
       total_buy_qty: float;
       total_sell_qty: float;
+      side: Side.t;
     }
   [@@deriving sexp, compare, equal, fields, csv]
 
@@ -96,6 +97,9 @@ module type ENTRY = sig
     t Pipe.Reader.t Symbol_map.t Deferred.t
 end
 
+module Side_option =
+    Csv_support.Optional.Make (Csv_support.Optional.Default_args (Side))
+
 module T = struct
   type t =
     { symbol : Symbol.Enum_or_string.t;
@@ -110,6 +114,7 @@ module T = struct
       update_source : Update_source.t;
       total_buy_qty: float;
       total_sell_qty: float;
+      side: Side_option.t
   }
   [@@deriving sexp, compare, equal, fields, csv]
 
@@ -127,6 +132,7 @@ module T = struct
       update_time = Option.value_or_thunk update_time ~default:Timestamp.now;
       total_buy_qty=0.;
       total_sell_qty=0.;
+      side=None
     }
 
   let rec on_trade ?(update_source = `Trade) ?timestamp
@@ -157,7 +163,7 @@ module T = struct
       let notional = signed_notional +. t.notional in
       let total_buy_qty, total_sell_qty =
        match side with 
-       | `Buy -> (t.total_buy_qty+.qty), t.total_sell_qty
+       | `Buy -> (t.total_buy_qty +. qty), t.total_sell_qty
        | `Sell -> t.total_buy_qty, (t.total_sell_qty+.qty) in
        let avg_buy_price, avg_sell_price = 
         match side with
@@ -175,7 +181,8 @@ module T = struct
         total_buy_qty;
         total_sell_qty;
         avg_buy_price;
-        avg_sell_price
+        avg_sell_price;
+        side=Some side
       } )
     |> fun t ->
     let sexp = sexp_of_t t in
