@@ -17,6 +17,13 @@ module Update_source = struct
   include Json.Make (Json.Enum (T))
 end
 
+module Side_option =
+    Csv_support.Optional.Make (Csv_support.Optional.Default_args (Side))
+
+module Float_option = 
+    Csv_support.Optional.Make (Csv_support.Optional.Default_args (Decimal_number))
+
+
 module type ENTRY = sig
   type t =
     { symbol : Symbol.Enum_or_string.t;
@@ -25,13 +32,14 @@ module type ENTRY = sig
       spot : float;
       pnl_spot : float;
       notional : float;
+      price: float option;
       avg_buy_price: float;
       avg_sell_price: float;
       update_time : Timestamp.t;
       update_source : Update_source.t;
       total_buy_qty: float;
       total_sell_qty: float;
-      side: Side.t;
+      side: Side_option.t;
     }
   [@@deriving sexp, compare, equal, fields, csv]
 
@@ -97,9 +105,6 @@ module type ENTRY = sig
     t Pipe.Reader.t Symbol_map.t Deferred.t
 end
 
-module Side_option =
-    Csv_support.Optional.Make (Csv_support.Optional.Default_args (Side))
-
 module T = struct
   type t =
     { symbol : Symbol.Enum_or_string.t;
@@ -114,6 +119,8 @@ module T = struct
       update_source : Update_source.t;
       total_buy_qty: float;
       total_sell_qty: float;
+      price: Float_option.t;
+      qty: Float_option.t;
       side: Side_option.t
   }
   [@@deriving sexp, compare, equal, fields, csv]
@@ -132,6 +139,8 @@ module T = struct
       update_time = Option.value_or_thunk update_time ~default:Timestamp.now;
       total_buy_qty=0.;
       total_sell_qty=0.;
+      price=None;
+      qty=None;
       side=None
     }
 
@@ -179,9 +188,11 @@ module T = struct
         update_time = timestamp;
         update_source;
         total_buy_qty;
+        price=Some price;
         total_sell_qty;
         avg_buy_price;
         avg_sell_price;
+        qty=Some qty;
         side=Some side
       } )
     |> fun t ->
@@ -198,7 +209,10 @@ module T = struct
       pnl_spot;
       pnl = t.notional + pnl_spot;
       update_time;
-      update_source = `Market_data
+      update_source = `Market_data;
+      side=None;
+      price=None;
+      qty=None
     }
 
   let update_from_book t book =

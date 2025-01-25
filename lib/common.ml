@@ -17,6 +17,9 @@ end
 
 module Decimal_number = struct
   type t = (float[@encoding `number]) [@@deriving sexp, yojson, equal, compare]
+
+  include (Float: module type of Float with type t:= t)
+  include (Csvfields.Csv.Atom (Float) : Csvfields.Csv.Csvable with type t := t)
 end
 
 module Decimal_string = struct
