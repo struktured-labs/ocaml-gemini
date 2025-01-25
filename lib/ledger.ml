@@ -32,14 +32,18 @@ module type ENTRY = sig
       spot : float;
       pnl_spot : float;
       notional : float;
-      price: float option;
       avg_buy_price: float;
       avg_sell_price: float;
       update_time : Timestamp.t;
       update_source : Update_source.t;
       total_buy_qty: float;
       total_sell_qty: float;
+      price: Float_option.t;
       side: Side_option.t;
+      package_price: Float_option.t;
+      qty: Float_option.t;
+      buy_notional: float;
+      sell_notional: float;
     }
   [@@deriving sexp, compare, equal, fields, csv]
 
@@ -121,7 +125,10 @@ module T = struct
       total_sell_qty: float;
       price: Float_option.t;
       qty: Float_option.t;
-      side: Side_option.t
+      package_price: Float_option.t;
+      side: Side_option.t;
+      buy_notional: float;
+      sell_notional: float;
   }
   [@@deriving sexp, compare, equal, fields, csv]
 
@@ -141,7 +148,10 @@ module T = struct
       total_sell_qty=0.;
       price=None;
       qty=None;
-      side=None
+      side=None;
+      buy_notional=0.;
+      sell_notional=0.;
+      package_price=None
     }
 
   let rec on_trade ?(update_source = `Trade) ?timestamp
@@ -178,6 +188,11 @@ module T = struct
         match side with
         | `Buy -> (t.avg_buy_price *. t.total_buy_qty +. price *. qty) /. total_buy_qty, t.avg_sell_price 
         | `Sell -> t.avg_buy_price, (t.avg_sell_price *. t.total_sell_qty +. price *. qty) /. total_sell_qty in
+      let buy_notional, sell_notional = 
+        match side with
+        | `Buy -> t.buy_notional +. package_price, t.sell_notional
+        | `Sell -> t.buy_notional, t.sell_notional +. package_price in
+
       Log.Global.info "package_price=%f t.notional=%f notional_sign=%f notional=%f signed_t_notitional=%f" package_price t.notional notional_sign notional signed_notional;
       { t with
         spot = price;
@@ -189,11 +204,14 @@ module T = struct
         update_source;
         total_buy_qty;
         price=Some price;
+        package_price=Some package_price;
         total_sell_qty;
         avg_buy_price;
         avg_sell_price;
         qty=Some qty;
-        side=Some side
+        side=Some side;
+        buy_notional;
+        sell_notional
       } )
     |> fun t ->
     let sexp = sexp_of_t t in
@@ -212,7 +230,8 @@ module T = struct
       update_source = `Market_data;
       side=None;
       price=None;
-      qty=None
+      qty=None;
+      package_price=None;
     }
 
   let update_from_book t book =
