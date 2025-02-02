@@ -89,24 +89,9 @@ module T = struct
 
     let empty : t = {orders=Order_map.empty;summary=empty_summary}
 
-    let on_order_event (t:t) (event : Order_events.Order_event.t) =
-      let order_id = event.order_id |> Int_number.of_string in
-      let orders = match event.is_cancelled || Option.value_map ~f:(fun r -> Float.equal 0. (Float.of_string r)) event.remaining_amount ~default:false with
-      | true -> Map.remove t.orders order_id
-      | false ->
-          Map.update t.orders order_id ~f:(function _ -> Order.of_order_event event) in
-      {t with orders}
-
-    let on_order_response (t:t) (response:Status.response) = 
-      let order_id = response.order_id in
-      let orders = match response.is_cancelled || Float.equal 0. (Float.of_string response.remaining_amount) with
-      | true -> Map.remove t.orders order_id
-      | false -> Map.update t.orders order_id ~f:(function _ -> Order.of_order_response response) in
-      {t with orders}
-
       
       
-    let summary (t:t) =
+    let summary_of_orders orders =
       Map.fold ~f:(fun ~key:_ ~(data:Order.t) {total_original; total_executed; total_remaining} ->
         let event = data in
         let original_amount = Option.value event.original_amount ~default:0. in
@@ -115,12 +100,30 @@ module T = struct
         {total_original=total_original +. original_amount;
          total_executed=total_executed +. executed_amount;
          total_remaining=total_remaining +. remaining_amount}
-      ) t.orders ~init:empty_summary
+      ) orders ~init:empty_summary
 
+      let summary t = t.summary
       let total_executed t = summary t |> fun {total_executed;_} -> total_executed
       let total_remaining t = summary t |> fun {total_remaining;_} -> total_remaining
       let total_original t = summary t |> fun {total_original;_} -> total_original
 
+
+    let on_order_event (t:t) (event : Order_events.Order_event.t) =
+      let order_id = event.order_id |> Int_number.of_string in
+      let orders = match event.is_cancelled || (not event.is_live) || Option.value_map ~f:(fun r -> Float.equal 0. (Float.of_string r)) event.remaining_amount ~default:false with
+      | true -> Map.remove t.orders order_id
+      | false ->
+          Map.update t.orders order_id ~f:(function _ -> Order.of_order_event event) in
+      let summary = summary_of_orders t.orders in
+      {orders;summary}
+
+    let on_order_response (t:t) (response:Status.response) = 
+      let order_id = response.order_id in
+      let orders = match response.is_cancelled || (not response.is_live) || Float.equal 0. (Float.of_string response.remaining_amount) with
+      | true -> Map.remove t.orders order_id
+      | false -> Map.update t.orders order_id ~f:(function _ -> Order.of_order_response response) in
+      let summary = summary_of_orders t.orders in
+      {orders;summary}
   end
 
 include T
