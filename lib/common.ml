@@ -4,36 +4,84 @@ module Auth = Auth
 module Result = Json.Result
 
 module Int_number = struct
+
+  module T = struct
   type t = (int64[@encoding `number]) [@@deriving sexp, yojson, equal, compare]
 
   include (Csvfields.Csv.Atom (Int64) : Csvfields.Csv.Csvable with type t := t)
+
+  let to_string = Int64.to_string
+  let of_string = Int64.of_string
+  end
+  include T
+  module Option = Csv_support.Optional.Make (Csv_support.Optional.Default_args (T))
 end
 
 module Int_string = struct
-  type t = (int64[@encoding `string]) [@@deriving sexp, yojson, equal, compare]
 
+  module T = struct
+  type t = (int64[@encoding `string]) [@@deriving sexp, yojson, equal, compare]
+    let to_string = Int64.to_string
+    let of_string = Int64.of_string
+    
   include (Csvfields.Csv.Atom (Int64) : Csvfields.Csv.Csvable with type t := t)
+  end 
+  include T 
+  module Option = Csv_support.Optional.Make (Csv_support.Optional.Default_args (T))
 end
 
 module Decimal_number = struct
-  type t = (float[@encoding `number]) [@@deriving sexp, yojson, equal, compare]
 
-  include (Float: module type of Float with type t:= t)
-  include (Csvfields.Csv.Atom (Float) : Csvfields.Csv.Csvable with type t := t)
+  module T = struct
+    type t = (float[@encoding `number]) [@@deriving sexp, yojson, equal, compare]
+    include (Float: module type of Float with type t:= t)
+    include (Csvfields.Csv.Atom (Float) : Csvfields.Csv.Csvable with type t := t)
+  end
+
+ include T
+ module Option = Csv_support.Optional.Make (Csv_support.Optional.Default_args (T))
 end
 
 module Decimal_string = struct
-  type t = string [@@deriving sexp, yojson, equal, compare]
 
-  include (Csvfields.Csv.Atom (String) : Csvfields.Csv.Csvable with type t := t)
+  module T =  struct
+    type t = string [@@deriving sexp, yojson, equal, compare] 
 
-  let of_string t = t
+    include (Csvfields.Csv.Atom (String) : Csvfields.Csv.Csvable with type t := t)
 
-  let to_string t = t
+    let of_string t = t
+
+    let to_string t = t
+  end
+  include T 
+  module Option = Csv_support.Optional.Make (Csv_support.Optional.Default_args (T))
+
 end
 
+(** Normalized definition of a price. *)
+module Price = struct
+
+  include Decimal_number
+
+  let of_float : float -> t = Fn.id
+  let to_float : t -> float = Fn.id
+
+ end
+
+
+
 module Client_order_id = struct
-  type t = string [@@deriving sexp, yojson, equal, compare]
+  
+  module T = struct
+    type t = string [@@deriving sexp, yojson, equal, compare]
+    let of_string = Fn.id
+    let to_string = Fn.id
+    include (Csvfields.Csv.Atom (String) : Csvfields.Csv.Csvable with type t := t)
+  end
+
+  include T
+  module Option = Csv_support.Optional.Make (Csv_support.Optional.Default_args (T))
+  
 end
 
 (** Represents an order side. *)
@@ -44,7 +92,7 @@ module Side = struct
       [ `Buy
       | `Sell
       ]
-    [@@deriving sexp, enumerate, equal, compare]
+    [@@deriving sexp, enumerate, equal, compare, enumerate]
 
     let to_string = function
       | `Buy -> "buy"
@@ -57,7 +105,13 @@ module Side = struct
 
   include T
 
-  include (Json.Make (T) : Json.S with type t := t)
+  module TT = struct 
+  include T
+    include (Json.Make (T) : Json.S with type t := t)
+  end 
+  include TT 
+  module Option = Csv_support.Optional.Make (Csv_support.Optional.Default_args (TT))
+
 end
 
 (** Represents an exchange type. Only gemini is currently supported *)

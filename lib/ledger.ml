@@ -17,13 +17,6 @@ module Update_source = struct
   include Json.Make (Json.Enum (T))
 end
 
-module Side_option =
-    Csv_support.Optional.Make (Csv_support.Optional.Default_args (Side))
-
-module Float_option = 
-    Csv_support.Optional.Make (Csv_support.Optional.Default_args (Decimal_number))
-
-
 module type ENTRY = sig
   type t =
     { symbol : Symbol.Enum_or_string.t;
@@ -38,10 +31,10 @@ module type ENTRY = sig
       update_source : Update_source.t;
       total_buy_qty: float;
       total_sell_qty: float;
-      price: Float_option.t;
-      side: Side_option.t;
-      package_price: Float_option.t;
-      qty: Float_option.t;
+      price: Price.Option.t;
+      side: Side.Option.t;
+      package_price: Price.Option.t;
+      qty: Price.Option.t;
       buy_notional: float;
       sell_notional: float;
     }
@@ -123,10 +116,10 @@ module T = struct
       update_source : Update_source.t;
       total_buy_qty: float;
       total_sell_qty: float;
-      price: Float_option.t;
-      qty: Float_option.t;
-      package_price: Float_option.t;
-      side: Side_option.t;
+      price: Price.Option.t;
+      qty: Decimal_number.Option.t;
+      package_price: Price.Option.t;
+      side: Side.Option.t;
       buy_notional: float;
       sell_notional: float;
   }
@@ -270,12 +263,12 @@ module T = struct
     in
     return @@ Pipe_ext.combine ?num_values ?behavior order_book order_events_pipe
     >>| fun pipe ->
-    Pipe.folding_map pipe ~init ~f:(fun t e ->
+      let init = (init, Order_tracker.empty) in
+      Pipe.folding_map pipe ~init ~f:(fun (t, order_tracker) e ->
         match e with
-        | `Order_book book ->
-          let t = update_from_book t book in
-          (t, t)
+        | `Order_book book -> let t = update_from_book t book in ((t, order_tracker), t)
         | `Order_event event -> (
+          let order_tracker = Order_tracker.on_order_event order_tracker event in 
           match event with
           | { symbol = _;
               side;
@@ -285,16 +278,21 @@ module T = struct
               price;
               _
             } ->
+            let _summary = Order_tracker.summary order_tracker in
             let t =
               match Option.both executed_amount price with
-              | None -> t
+              | None -> 
+(*                Log.Global.info "Missing executed_amount or price in order event";
+                on_summary t ~summary*)
+                t
               | Some (executed_amount, price) ->
                 let price = Float.of_string price in
                 let qty = Float.of_string executed_amount in
                 let timestamp = timestampms in
                 on_trade t ~timestamp ~side ~price ~qty
+                
             in
-            (t, t) ) )
+            ((t, order_tracker), t) ) )
 
   let from_mytrades ?(init : t Symbol_map.t option)
       ?(avg_trade_prices : float Symbol_map.t option)
