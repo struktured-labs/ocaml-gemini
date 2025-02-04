@@ -247,12 +247,13 @@ module T = struct
   [@@deriving sexp]
 
   let combine ~init ?num_values ?behavior (order_book : Order_book.Book.t Pipe.Reader.t)
-      (order_events_pipe : Order_events.response Pipe.Reader.t) =
+      (order_events : Order_events.response Pipe.Reader.t) =
+    
     let order_book =
       Pipe.map order_book ~f:(fun t -> (`Order_book t :> event))
     in
-    let order_events_pipe =
-      Pipe.concat_map_list order_events_pipe ~f:(function
+    let order_events =
+      Pipe.concat_map_list order_events ~f:(function
         | `Order_event e -> [ e ]
         | `Order_events ee -> ee
         | _ -> [] )
@@ -261,7 +262,7 @@ module T = struct
              | true -> Some (`Order_event o :> event)
              | false -> None )
     in
-    return @@ Pipe_ext.combine ?num_values ?behavior order_book order_events_pipe
+    return @@ Pipe_ext.combine ?num_values ?behavior order_book order_events
     >>| fun pipe ->
       let init = (init, Order_tracker.empty) in
       Pipe.folding_map pipe ~init ~f:(fun (t, order_tracker) e ->
@@ -293,6 +294,8 @@ module T = struct
                 
             in
             ((t, order_tracker), t) ) )
+  let combine' ?notional ?update_time ?update_source ~symbol = 
+    combine ~init:(create ~symbol ?notional ?update_time ?update_source ())
 
   let from_mytrades ?(init : t Symbol_map.t option)
       ?(avg_trade_prices : float Symbol_map.t option)
