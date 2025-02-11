@@ -161,7 +161,7 @@ module T = struct
     ]
   [@@deriving sexp]
 
-  let combine ~init ?num_values ?behavior (order_book : Order_book.Book.t Pipe.Reader.t)
+  let pipe ~init ?num_values ?behavior (order_book : Order_book.Book.t Pipe.Reader.t)
       (order_events : Order_events.response Pipe.Reader.t) =
     
     let order_book =
@@ -209,8 +209,8 @@ module T = struct
                 
             in
             ((t, order_tracker), t) ) )
-  let _combine' ?notional ?update_time ?update_source ~symbol = 
-    combine ~init:(create ~symbol ?notional ?update_time ?update_source ())
+  let _pipe ?notional ?update_time ?update_source ~symbol = 
+    pipe ~init:(create ~symbol ?notional ?update_time ?update_source ())
 
   let from_mytrades ?(init : t Symbol_map.t option)
       ?(avg_trade_prices : float Symbol_map.t option)
@@ -277,7 +277,7 @@ module T = struct
          let init, trades_by_symbol = from_mytrades ?init ?avg_trade_prices (Poly_ok.ok_exn trades) in
          let init = Map.find init enum_or_str_symbol |> Option.value ~default:(create ~symbol:enum_or_str_symbol ()) in
          let trade_pipe = Map.find trades_by_symbol enum_or_str_symbol |> Option.value_or_thunk ~default:Pipe.empty in
-         combine ~init order_book order_events >>| Pipe_ext.combine trade_pipe)
+         pipe ~init order_book order_events >>| Pipe_ext.combine trade_pipe)
   
 end
 

@@ -61,17 +61,19 @@ module Entry : sig
 
   val update_from_book : t -> Order_book.Book.t -> t
 
-  val combine :
+  val pipe :
     init:t ->
     ?num_values:int ->
     ?behavior:[ `Alternate | `Priority | `Random ] ->
     Order_book.Book.t Pipe.Reader.t ->
     Order_events.response Pipe.Reader.t ->
     t Pipe.Reader.t Deferred.t
-  (* [combine init ?num_values ?behavior book events] produces a pipe of entry updates starting with [init], pushing
+  (* [pipe init ?num_values ?behavior book events] produces a pipe of entry updates starting with [init], pushing
       new entries on the pipe for [t.symbol] by either public order [book] updates (which
       affect unrealized pnl) or the private order [events] pipe which affect both realize and unrealized.
-  *)
+
+      At most [num_values] are emitted on the pipe, and the [behavior] determines how the pipe 
+      will select between the two sources. *)
 
   val from_mytrades :
     ?init:t Symbol_map.t ->
