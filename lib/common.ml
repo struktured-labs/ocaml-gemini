@@ -308,6 +308,8 @@ module Symbol = struct
   end
 
   include T
+
+  module Map = Map.Make (T)
   module Enum = Json.Enum (T)
   include Enum
 

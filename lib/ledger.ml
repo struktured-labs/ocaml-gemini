@@ -1,7 +1,7 @@
 open! Common
 open V1
 module Currency_map = Map.Make (Currency.Enum_or_string)
-module Symbol_map = Map.Make (Symbol.Enum_or_string)
+
 
 
 module Update_source = struct
@@ -39,6 +39,7 @@ module T = struct
       sell_notional: float;
   }
   [@@deriving sexp, compare, equal, fields, csv]
+
 
   let create ?(notional = 0.0) ?(update_source = `Market_data) ?update_time
       ~(symbol : Symbol.Enum_or_string.t) () : t =
@@ -212,13 +213,13 @@ module T = struct
   let _pipe ?notional ?update_time ?update_source ~symbol = 
     pipe ~init:(create ~symbol ?notional ?update_time ?update_source ())
 
-  let from_mytrades ?(init : t Symbol_map.t option)
-      ?(avg_trade_prices : float Symbol_map.t option)
+  let from_mytrades ?(init : t Symbol.Enum_or_string.Map.t option)
+      ?(avg_trade_prices : float Symbol.Enum_or_string.Map.t option)
       (response : Mytrades.trade list) :
-      t Symbol_map.t * t Pipe.Reader.t Symbol_map.t =
-    let init : _ Symbol_map.t = Option.value init ~default:Symbol_map.empty in
+      t Symbol.Enum_or_string.Map.t * t Pipe.Reader.t Symbol.Enum_or_string.Map.t =
+    let init : _ Symbol.Enum_or_string.Map.t = Option.value init ~default:Symbol.Enum_or_string.Map.empty in
     let fold_f
-        (symbol_map : (t * t Pipe.Reader.t * t Pipe.Writer.t) Symbol_map.t)
+        (symbol_map : (t * t Pipe.Reader.t * t Pipe.Writer.t) Symbol.Enum_or_string.Map.t)
         (trade : Mytrades.trade) =
       let symbol : Symbol.Enum_or_string.t = trade.symbol in
       let update (t, reader, writer) =
@@ -226,7 +227,7 @@ module T = struct
         let side = trade.type_ in
         let qty = Float.of_string trade.amount in
         let avg_trade_price =
-          Option.value ~default:Symbol_map.empty avg_trade_prices
+          Option.value ~default:Symbol.Enum_or_string.Map.empty avg_trade_prices
           |> fun avg_trade_prices -> Map.find avg_trade_prices symbol
         in
         let timestamp = trade.timestamp in
@@ -268,7 +269,7 @@ module T = struct
       List.folding_map ~init:order_events symbols ~f:(fun oe symbol ->
           let oe, oe' = Pipe.fork ~pushback_uses:`Fast_consumer_only oe in
           (oe', (symbol, oe)) )
-      |> Symbol_map.of_alist_exn
+      |> Symbol.Enum_or_string.Map.of_alist_exn
     in
     Deferred.Map.mapi ~how order_events ~f:(fun ~key:enum_or_str_symbol ~data:order_events ->
         let symbol = Symbol.Enum_or_string.to_enum_exn enum_or_str_symbol in
@@ -285,22 +286,22 @@ module Entry (*: ENTRY *) = struct
   module Csv_writer = Csv_support.Writer (T)
   include T
 end
-
+(**
 module type S = sig
-  type t = (Entry.t Symbol_map.t[@deriving sexp, equal, compare])
+  type t = (Entry.t Symbol.Enum_or_string.Map.t[@deriving sexp, equal, compare])
 
   val from_mytrades :
-    ?avg_trade_prices:float Symbol_map.t ->
+    ?avg_trade_prices:float Symbol.Enum_or_string.Map.t ->
     Mytrades.response ->
     t * Entry.t Pipe.Reader.t
 
-  val update_spots : ?timestamp:Timestamp.t -> t -> float Symbol_map.t -> t
+  val update_spots : ?timestamp:Timestamp.t -> t -> float Symbol.Enum_or_string.Map.t -> t
 
   val command : string * Command.t
 end
-
+*)
 module Ledger (*: S *) = struct
-  type t = Entry.t Symbol_map.t [@@deriving sexp, compare, equal]
+  type t = Entry.t Symbol.Enum_or_string.Map.t [@@deriving sexp, compare, equal]
 
   (*
   type event =
@@ -345,7 +346,7 @@ module Ledger (*: S *) = struct
   let on_order_event_response t response =
     on_order_events t (Order_events.order_events_of_response response)
 
-  let update_spots ?timestamp (pnl : t) (prices : float Symbol_map.t) =
+  let update_spots ?timestamp (pnl : t) (prices : float Symbol.Enum_or_string.Map.t) =
     Map.fold prices ~init:pnl ~f:(fun ~key:symbol ~data:price pnl ->
         Map.update pnl symbol ~f:(function
           | None -> Entry.create ~symbol ()
@@ -433,6 +434,13 @@ Command does what?
               in
               Pipe.filter reader ~f |>
               Pipe.read_exactly ?consumer:None ~num_values:1 >>= fun _ -> Deferred.unit)])
-end
+
+
+  let pipe ?num_values ?behavior ?(how=`Sequential) ~(init:Entry.t Symbol.Enum_or_string.Map.t) (order_books:Order_book.Book.t Pipe.Reader.t Symbol.Enum_or_string.Map.t) order_events =
+    Deferred.Map.map ~how init ~f:(fun entry ->  
+      let order_book = Entry.symbol entry |> Map.find order_books in
+      let order_book = Option.value_exn order_book in
+      Entry.pipe ~init:entry ?num_values ?behavior order_book order_events)
+  end
 
 include Ledger
