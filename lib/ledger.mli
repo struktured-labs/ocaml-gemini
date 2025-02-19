@@ -125,9 +125,9 @@ val pipe :
     ?num_values:int ->
     ?behavior:[ `Alternate | `Priority | `Random ] ->
     ?how:Monad_sequence.how ->
-    init:Entry.t Symbol.Enum_or_string.Map.t ->
-    Order_book.Book.t Pipe.Reader.t Symbol.Enum_or_string.Map.t ->
+    init:Entry.t Symbol.Map.t ->
+    Order_book.Book.t Pipe.Reader.t Symbol.Map.t ->
     Order_events.response Pipe.Reader.t ->
-    Entry.t Pipe.Reader.t Symbol.Enum_or_string.Map.t Deferred.t
+    Entry.t Pipe.Reader.t Symbol.Map.t Deferred.t
 
 val command : string * Command.t

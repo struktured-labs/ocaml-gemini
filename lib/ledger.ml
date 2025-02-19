@@ -436,9 +436,9 @@ Command does what?
               Pipe.read_exactly ?consumer:None ~num_values:1 >>= fun _ -> Deferred.unit)])
 
 
-  let pipe ?num_values ?behavior ?(how=`Sequential) ~(init:Entry.t Symbol.Enum_or_string.Map.t) (order_books:Order_book.Book.t Pipe.Reader.t Symbol.Enum_or_string.Map.t) order_events =
+  let pipe ?num_values ?behavior ?(how=`Sequential) ~(init:Entry.t Symbol.Map.t) (order_books:Order_book.Book.t Pipe.Reader.t Symbol.Map.t) order_events =
     Deferred.Map.map ~how init ~f:(fun entry ->  
-      let order_book = Entry.symbol entry |> Map.find order_books in
+      let order_book = entry.symbol |> Symbol.Enum_or_string.to_enum_exn (* TODO: Rethink this *) |> Map.find order_books in
       let order_book = Option.value_exn order_book in
       Entry.pipe ~init:entry ?num_values ?behavior order_book order_events)
   end
