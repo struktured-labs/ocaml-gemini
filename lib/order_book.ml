@@ -1,6 +1,5 @@
 open! Common
 open V1
-module Symbol_map = Map.Make (Symbol)
 
 module Price = struct
   include Float
@@ -288,7 +287,7 @@ module Book = struct
     List.iter asks ~f:(fun Price_level.{ price; volume = size } ->
         printer ~side:`Ask ~price ~size )
 
-  let pipe (module Cfg : Cfg.S) ~symbol () =
+  let pipe (module Cfg : Cfg.S) ~(symbol:Symbol.t) () =
     let book = empty symbol in
     Market_data.client (module Cfg) ?query:None ~uri_args:symbol ()
     >>| fun pipe ->
@@ -310,12 +309,12 @@ end
 
 module Books = struct
   type t =
-    { books : Book.t Symbol_map.t;
+    { books : Book.t Symbol.Map.t;
       update_time : Timestamp.t
     }
   [@@deriving fields, compare, equal, sexp]
 
-  let empty = { books = Symbol_map.empty; update_time = Timestamp.now () }
+  let empty = { books = Symbol.Map.empty; update_time = Timestamp.now () }
 
   let update_ ?timestamp ~f t ~symbol ~side ~price ~size =
     let timestamp = Option.value_or_thunk timestamp ~default:Timestamp.now in
@@ -354,16 +353,16 @@ module Books = struct
       | Some book -> Book.on_market_data book market_data )
 
   let pipe (module Cfg : Cfg.S) ?(symbols = Symbol.all) () :
-      [ `Ok of Book.t | Market_data.Error.t ] Pipe.Reader.t Symbol_map.t
+      [ `Ok of Book.t | Market_data.Error.t ] Pipe.Reader.t Symbol.Map.t
       Deferred.t =
     Deferred.List.map ~how:`Parallel symbols ~f:(fun symbol ->
         Deferred.both (return symbol) (Book.pipe (module Cfg) ~symbol ()) )
-    >>| Symbol_map.of_alist_exn
+    >>| Symbol.Map.of_alist_exn
 
   let pipe_exn (module Cfg : Cfg.S) ?symbols () :
-      Book.t Pipe.Reader.t Symbol_map.t Deferred.t =
+      Book.t Pipe.Reader.t Symbol.Map.t Deferred.t =
     pipe (module Cfg) ?symbols ()
-    >>| Symbol_map.map ~f:(fun pipe ->
+    >>| Symbol.Map.map ~f:(fun pipe ->
             Pipe.map pipe ~f:(fun result ->
                 match result with
                 | `Ok x -> x
