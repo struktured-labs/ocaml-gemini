@@ -10,6 +10,7 @@ module Pipe_ext = Pipe_ext
 module V1 = V1
 module Order_book = Order_book
 module Ledger = Ledger
+module Session = Session
 open V1
 
 let command : Command.t =
