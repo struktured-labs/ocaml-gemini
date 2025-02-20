@@ -1,7 +1,8 @@
 open! Common
-open V1
 module Currency_map = Map.Make (Currency.Enum_or_string)
 
+module Mytrades = V1.Mytrades
+module Order_events = V1.Order_events
 
 
 module Update_source = struct

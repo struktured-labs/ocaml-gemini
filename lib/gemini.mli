@@ -48,7 +48,7 @@ module V1 : sig
 
   module Currency : module type of Currency
 
-  module Symbol : module type of Symbol
+  module Symbol = Symbol
 
   module Exchange : module type of Exchange
 
