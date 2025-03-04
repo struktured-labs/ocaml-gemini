@@ -38,6 +38,9 @@ module T = struct
       package_price: Price.Option.t;
       buy_notional: float;
       sell_notional: float;
+      total_original: float;
+      total_executed: float;
+      total_remaining: float;
   }
   [@@deriving sexp, compare, equal, fields, csv]
 
@@ -61,7 +64,10 @@ module T = struct
       side=None;
       buy_notional=0.;
       sell_notional=0.;
-      package_price=None
+      package_price=None;
+      total_executed=0.;
+      total_original=0.;  
+      total_remaining=0.;
     }
 
   let rec on_trade ?(update_source = `Trade) ?timestamp
@@ -161,8 +167,15 @@ module T = struct
     [ `Order_event of Order_events.Order_event.t
     | `Order_book of Order_book.Book.t
     ]
-  [@@deriving sexp]
-
+  [@@deriving sexp] 
+ 
+  let on_summary t (summary:Order_tracker.summary) =
+    let Order_tracker.{total_original; total_executed; total_remaining} = summary in
+    { t with
+      total_original;
+      total_executed;
+      total_remaining;
+    }
   let pipe ~init ?num_values ?behavior (order_book : Order_book.Book.t Pipe.Reader.t)
       (order_events : Order_events.response Pipe.Reader.t) =
     
@@ -196,20 +209,18 @@ module T = struct
               price;
               _
             } ->
-            let _summary = Order_tracker.summary order_tracker in
+            let summary = Order_tracker.summary order_tracker in
             let t =
               match Option.both executed_amount price with
               | None -> 
-(*                Log.Global.info "Missing executed_amount or price in order event";
-                on_summary t ~summary*)
-                t
+                Log.Global.info "Missing executed_amount or price in order event"; t
               | Some (executed_amount, price) ->
                 let price = Float.of_string price in
                 let qty = Float.of_string executed_amount in
                 let timestamp = timestampms in
                 on_trade t ~timestamp ~side ~price ~qty
-                
-            in
+               |> fun t -> on_summary t summary
+            in 
             ((t, order_tracker), t) ) )
   let _pipe ?notional ?update_time ?update_source ~symbol = 
     pipe ~init:(create ~symbol ?notional ?update_time ?update_source ())

@@ -165,3 +165,8 @@ module Make (C : Cfg.S) = struct
         `Ok response
     | #Error.post as e -> e
 end
+
+module Prod_session () = Make(Cfg.Production())
+module Sandbox_session () = Make(Cfg.Sandbox())
+
+

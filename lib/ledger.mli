@@ -31,7 +31,10 @@ module Entry : sig
       qty : Price.Option.t;
       package_price : Price.Option.t;
       buy_notional : float;
-      sell_notional : float
+      sell_notional : float;
+      total_original: float;
+      total_executed: float;
+      total_remaining: float;
     }
   [@@deriving sexp, compare, equal, fields, csv]
 
