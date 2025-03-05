@@ -146,9 +146,10 @@ module Make (C : Cfg.S) = struct
     Order.New.post (cfg t) t.api_nonce req >>| function
     | `Ok response ->
         let order_id = response.order_id in
-        let status_pipe = status_pipe (cfg t) t.api_nonce order_id in
+        let status_pipe : _ Inf_pipe.Reader.t = status_pipe (cfg t) t.api_nonce order_id in
+        let status_pipe, status_pipe' = Inf_pipe.fork ~pushback_uses:`Fast_consumer_only status_pipe in
         Concurrent_order_map.set ~key:order_id ~data:status_pipe t.events.order_status;
-        `Ok (response, status_pipe)
+        `Ok (response, status_pipe')
     | #Error.post as e -> e
 
   let cancel_order t req =
