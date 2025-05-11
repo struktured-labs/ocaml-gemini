@@ -28,6 +28,7 @@ module T = struct
       notional : float;
       avg_buy_price: float;
       avg_sell_price: float;
+      avg_price: float;
       update_time : Timestamp.t;
       update_source : Update_source.t;
       total_buy_qty: float;
@@ -55,6 +56,7 @@ module T = struct
       position = 0.;
       avg_buy_price= 0.;
       avg_sell_price=0.;
+      avg_price=0.;
       update_source;
       update_time = Option.value_or_thunk update_time ~default:Timestamp.now;
       total_buy_qty=0.;
@@ -104,6 +106,7 @@ module T = struct
         match side with
         | `Buy -> (t.avg_buy_price *. t.total_buy_qty +. price *. qty) /. total_buy_qty, t.avg_sell_price 
         | `Sell -> t.avg_buy_price, (t.avg_sell_price *. t.total_sell_qty +. price *. qty) /. total_sell_qty in
+      let avg_price = (avg_buy_price *. total_buy_qty +. avg_sell_price *. total_sell_qty)  /. (total_buy_qty +. total_sell_qty) in
       let buy_notional, sell_notional = 
         match side with
         | `Buy -> t.buy_notional +. package_price, t.sell_notional
@@ -124,6 +127,7 @@ module T = struct
         total_sell_qty;
         avg_buy_price;
         avg_sell_price;
+        avg_price;
         qty=Some qty;
         side=Some side;
         buy_notional;

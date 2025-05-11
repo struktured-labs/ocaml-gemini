@@ -22,6 +22,7 @@ module Entry : sig
       notional : float;
       avg_buy_price : float;
       avg_sell_price : float;
+      avg_price: float;
       update_time : Timestamp.t;
       update_source : Update_source.t;
       total_buy_qty : float;
