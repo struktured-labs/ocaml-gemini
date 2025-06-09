@@ -42,6 +42,9 @@ module T = struct
       total_original: float;
       total_executed: float;
       total_remaining: float;
+      cost_basis: float;
+      running_price: float;
+      running_qty: float;
   }
   [@@deriving sexp, compare, equal, fields, csv]
 
@@ -70,6 +73,9 @@ module T = struct
       total_executed=0.;
       total_original=0.;  
       total_remaining=0.;
+      cost_basis=0.;
+      running_price = 0.;
+      running_qty=0.;
     }
 
   let rec on_trade ?(update_source = `Trade) ?timestamp
@@ -111,7 +117,18 @@ module T = struct
         match side with
         | `Buy -> t.buy_notional +. package_price, t.sell_notional
         | `Sell -> t.buy_notional, t.sell_notional +. package_price in
-
+     let cost_basis = 
+        match side with
+        | `Buy -> t.cost_basis +.  package_price
+        | `Sell -> t.cost_basis -. t.cost_basis *. qty /. t.running_qty in
+      let running_qty = 
+        match side with
+        | `Buy -> t.running_qty +. qty
+        | `Sell -> t.running_qty -. qty in
+      let running_price =
+        match running_qty with
+        | 0. -> 0.
+        | _ -> t.cost_basis /. running_qty in
       Log.Global.info "package_price=%f t.notional=%f notional_sign=%f notional=%f signed_t_notitional=%f" package_price t.notional notional_sign notional signed_notional;
       { t with
         spot = price;
@@ -131,7 +148,10 @@ module T = struct
         qty=Some qty;
         side=Some side;
         buy_notional;
-        sell_notional
+        sell_notional;
+        running_price;
+        running_qty;
+        cost_basis
       } )
     |> fun t ->
     let sexp = sexp_of_t t in
