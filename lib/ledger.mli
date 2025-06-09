@@ -22,7 +22,7 @@ module Entry : sig
       notional : float;
       avg_buy_price : float;
       avg_sell_price : float;
-      avg_price: float;
+      avg_price : float;
       update_time : Timestamp.t;
       update_source : Update_source.t;
       total_buy_qty : float;
@@ -36,9 +36,9 @@ module Entry : sig
       total_original : float;
       total_executed : float;
       total_remaining : float;
-      cost_basis: float;
-      running_price: float;
-      running_qty: float;
+      cost_basis : float;
+      running_price : float;
+      running_qty : float
     }
   [@@deriving sexp, compare, equal, fields, csv]
 
@@ -75,7 +75,7 @@ module Entry : sig
       new entries on the pipe for [t.symbol] by either public order [book] updates (which
       affect unrealized pnl) or the private order [events] pipe which affect both realize and unrealized.
 
-      At most [num_values] are emitted on the pipe, and the [behavior] determines how the pipe 
+      At most [num_values] are emitted on the pipe, and the [behavior] determines how the pipe
       will select between the two sources. *)
 
   val from_mytrades :
@@ -126,15 +126,16 @@ val on_order_events : t -> Order_events.Order_event.t list -> t
 
 val on_order_event_response : t -> Order_events.response -> t
 
-val update_spots : ?timestamp:Timestamp.t -> t -> float Symbol.Enum_or_string.Map.t -> t
+val update_spots :
+  ?timestamp:Timestamp.t -> t -> float Symbol.Enum_or_string.Map.t -> t
 
 val pipe :
-    ?num_values:int ->
-    ?behavior:[ `Alternate | `Priority | `Random ] ->
-    ?how:Monad_sequence.how ->
-    init:Entry.t Symbol.Map.t ->
-    Order_book.Book.t Pipe.Reader.t Symbol.Map.t ->
-    Order_events.response Pipe.Reader.t ->
-    Entry.t Pipe.Reader.t Symbol.Map.t Deferred.t
+  ?num_values:int ->
+  ?behavior:[ `Alternate | `Priority | `Random ] ->
+  ?how:Monad_sequence.how ->
+  init:Entry.t Symbol.Map.t ->
+  Order_book.Book.t Pipe.Reader.t Symbol.Map.t ->
+  Order_events.response Pipe.Reader.t ->
+  Entry.t Pipe.Reader.t Symbol.Map.t Deferred.t
 
 val command : string * Command.t

@@ -287,7 +287,7 @@ module Book = struct
     List.iter asks ~f:(fun Price_level.{ price; volume = size } ->
         printer ~side:`Ask ~price ~size )
 
-  let pipe (module Cfg : Cfg.S) ~(symbol:Symbol.t) () =
+  let pipe (module Cfg : Cfg.S) ~(symbol : Symbol.t) () =
     let book = empty symbol in
     Market_data.client (module Cfg) ?query:None ~uri_args:symbol ()
     >>| fun pipe ->

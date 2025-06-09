@@ -89,7 +89,7 @@ module type S = sig
 
     val to_enum_exn : t -> enum
 
-    module Map: Map.S with type Key.t := t
+    module Map : Map.S with type Key.t := t
   end
 
   val dict : (string * t) list
@@ -244,11 +244,11 @@ module Make (E : ENUM_STRING) : S with type t = E.t = struct
             promote ss
             |> Option.value_exn ~here:[%here] ~message:(conversion_error s)
           | Enum e -> e
-
       end
 
       include T
       module Map = Map.Make (T)
+
       include (Csvfields.Csv.Atom (T) : Csvfields.Csv.Csvable with type t := t)
     end
   end

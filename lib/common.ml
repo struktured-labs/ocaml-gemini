@@ -4,84 +4,95 @@ module Auth = Auth
 module Result = Json.Result
 
 module Int_number = struct
-
   module T = struct
-  type t = (int64[@encoding `number]) [@@deriving sexp, yojson, equal, compare]
+    type t = (int64[@encoding `number])
+    [@@deriving sexp, yojson, equal, compare]
 
-  include (Csvfields.Csv.Atom (Int64) : Csvfields.Csv.Csvable with type t := t)
+    include (Csvfields.Csv.Atom (Int64) : Csvfields.Csv.Csvable with type t := t)
 
-  let to_string = Int64.to_string
-  let of_string = Int64.of_string
+    let to_string = Int64.to_string
+
+    let of_string = Int64.of_string
   end
+
   include T
-  module Option = Csv_support.Optional.Make (Csv_support.Optional.Default_args (T))
+  module Option =
+    Csv_support.Optional.Make (Csv_support.Optional.Default_args (T))
 end
 
 module Int_string = struct
-
   module T = struct
-  type t = (int64[@encoding `string]) [@@deriving sexp, yojson, equal, compare]
+    type t = (int64[@encoding `string])
+    [@@deriving sexp, yojson, equal, compare]
+
     let to_string = Int64.to_string
+
     let of_string = Int64.of_string
-    
-  include (Csvfields.Csv.Atom (Int64) : Csvfields.Csv.Csvable with type t := t)
-  end 
-  include T 
-  module Option = Csv_support.Optional.Make (Csv_support.Optional.Default_args (T))
+
+    include (Csvfields.Csv.Atom (Int64) : Csvfields.Csv.Csvable with type t := t)
+  end
+
+  include T
+  module Option =
+    Csv_support.Optional.Make (Csv_support.Optional.Default_args (T))
 end
 
 module Decimal_number = struct
-
   module T = struct
-    type t = (float[@encoding `number]) [@@deriving sexp, yojson, equal, compare]
-    include (Float: module type of Float with type t:= t)
+    type t = (float[@encoding `number])
+    [@@deriving sexp, yojson, equal, compare]
+
+    include (Float : module type of Float with type t := t)
+
     include (Csvfields.Csv.Atom (Float) : Csvfields.Csv.Csvable with type t := t)
   end
 
- include T
- module Option = Csv_support.Optional.Make (Csv_support.Optional.Default_args (T))
+  include T
+  module Option =
+    Csv_support.Optional.Make (Csv_support.Optional.Default_args (T))
 end
 
 module Decimal_string = struct
+  module T = struct
+    type t = string [@@deriving sexp, yojson, equal, compare]
 
-  module T =  struct
-    type t = string [@@deriving sexp, yojson, equal, compare] 
-
-    include (Csvfields.Csv.Atom (String) : Csvfields.Csv.Csvable with type t := t)
+    include (
+      Csvfields.Csv.Atom (String) : Csvfields.Csv.Csvable with type t := t)
 
     let of_string t = t
 
     let to_string t = t
   end
-  include T 
-  module Option = Csv_support.Optional.Make (Csv_support.Optional.Default_args (T))
 
+  include T
+  module Option =
+    Csv_support.Optional.Make (Csv_support.Optional.Default_args (T))
 end
 
 (** Normalized definition of a price. *)
 module Price = struct
-
   include Decimal_number
 
   let of_float : float -> t = Fn.id
+
   let to_float : t -> float = Fn.id
-
- end
-
-
+end
 
 module Client_order_id = struct
-  
   module T = struct
     type t = string [@@deriving sexp, yojson, equal, compare]
+
     let of_string = Fn.id
+
     let to_string = Fn.id
-    include (Csvfields.Csv.Atom (String) : Csvfields.Csv.Csvable with type t := t)
+
+    include (
+      Csvfields.Csv.Atom (String) : Csvfields.Csv.Csvable with type t := t)
   end
 
   include T
-  module Option = Csv_support.Optional.Make (Csv_support.Optional.Default_args (T))
-  
+  module Option =
+    Csv_support.Optional.Make (Csv_support.Optional.Default_args (T))
 end
 
 (** Represents an order side. *)
@@ -105,13 +116,15 @@ module Side = struct
 
   include T
 
-  module TT = struct 
-  include T
-    include (Json.Make (T) : Json.S with type t := t)
-  end 
-  include TT 
-  module Option = Csv_support.Optional.Make (Csv_support.Optional.Default_args (TT))
+  module TT = struct
+    include T
 
+    include (Json.Make (T) : Json.S with type t := t)
+  end
+
+  include TT
+  module Option =
+    Csv_support.Optional.Make (Csv_support.Optional.Default_args (TT))
 end
 
 (** Represents an exchange type. Only gemini is currently supported *)
@@ -308,7 +321,6 @@ module Symbol = struct
   end
 
   include T
-
   module Map = Map.Make (T)
   module Enum = Json.Enum (T)
   include Enum
