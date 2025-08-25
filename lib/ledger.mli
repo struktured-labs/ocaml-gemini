@@ -14,30 +14,55 @@ end
 
 module Entry : sig
   type t =
-    { symbol : Symbol.Enum_or_string.t;
+    { (** Market symbol (exchange-specific enum or string). *)
+      symbol : Symbol.Enum_or_string.t;
+      (** Total profit and loss for this entry (realized + unrealized). *)
       pnl : float;
+      (** Net position size (positive = long, negative = short). *)
       position : float;
+      (** Current spot/market price for the symbol. *)
       spot : float;
+      (** PnL calculated against the current spot price (unrealized). *)
       pnl_spot : float;
+      (** Notional value of the position (position * running price). *)
       notional : float;
+      (** Average price of executed buy fills for this symbol. *)
       avg_buy_price : float;
+      (** Average price of executed sell fills for this symbol. *)
       avg_sell_price : float;
+      (** Overall average execution price combining buys and sells. *)
       avg_price : float;
+      (** Time when this entry was last updated. *)
       update_time : Timestamp.t;
+      (** Source of the most recent update (market data, trade, external). *)
       update_source : Update_source.t;
+      (** Cumulative quantity bought. *)
       total_buy_qty : float;
+      (** Cumulative quantity sold. *)
       total_sell_qty : float;
+      (** Best known price for the entry (wrapped in Price.Option). *)
       price : Price.Option.t;
+      (** Side associated with the latest price/quote (wrapped in Side.Option). *)
       side : Side.Option.t;
+      (** Quantity associated with the latest price/quote (wrapped in Price.Option). *)
       qty : Price.Option.t;
+      (** Aggregated package/filled price when trades are executed as a package. *)
       package_price : Price.Option.t;
+      (** Cumulative notional bought. *)
       buy_notional : float;
+      (** Cumulative notional sold. *)
       sell_notional : float;
+      (** Total original quantity for outstanding orders (submitted). *)
       total_original : float;
+      (** Total quantity executed so far. *)
       total_executed : float;
+      (** Total remaining quantity for outstanding orders. *)
       total_remaining : float;
+      (** Cost basis used for accounting / P&L calculations. *)
       cost_basis : float;
+      (** Running (latest) reference price used to compute notional and P&L. *)
       running_price : float;
+      (** Running aggregate executed quantity (used with running_price). *)
       running_qty : float
     }
   [@@deriving sexp, compare, equal, fields, csv]
