@@ -10,7 +10,7 @@ module Concurrent_order_map = Concurrent_map.Make (Int64)
 module Client_order_id = struct
   include Nonce.File
 
-  let default_filename = "~/.marbl/client_order_id"
+  let default_filename = "~/.gemini/client_order_id"
 
   type reader = string Inf_pipe.Reader.t
 
