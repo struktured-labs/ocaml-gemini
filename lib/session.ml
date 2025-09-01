@@ -10,7 +10,7 @@ module Concurrent_order_map = Concurrent_map.Make (Int64)
 module Client_order_id = struct
   include Nonce.File
 
-  let default_filename = "~/.gemini/client_order_id"
+  let default_filename = sprintf "%s/%s" (Unix.getenv_exn "HOME") "client_order_id"
 
   type reader = string Inf_pipe.Reader.t
 
@@ -102,10 +102,12 @@ module Events = struct
     let order_books, order_books_exn =
       (Map.map order_books_fork ~f:fst, Map.map order_books_fork ~f:snd)
     in
+    let sexp_of_error = function `Ok _ -> assert false | #Market_data.Error.t as e -> Market_data.Error.sexp_of_t e in
     let order_books_exn =
-      Map.map ~f:(Pipe.map ~f:Poly_ok.ok_exn') order_books_exn
+      Map.map ~f:(Pipe.map ~f:(Poly_ok.ok_exn ~sexp_of_error 
+          ~message:"Order book error" ~here:[%here])) order_books_exn
     in
-    let order_events_exn = Pipe.map ~f:Poly_ok.ok_exn' order_events_exn in
+    let order_events_exn = Pipe.map ~f:(Poly_ok.ok_exn ~sexp_of_error ~message:"Order event error" ~here:[%here]) order_events_exn in
     Ledger.pipe ?num_values:None ?how:None ?behavior:None ~init order_books_exn
       order_events_exn
     >>| fun ledger ->
@@ -143,8 +145,13 @@ module Make (C : Cfg.S) = struct
 
   let create ?(name = "bot") ?symbols ?order_ids ~api_nonce
       ?client_order_id_nonce () : t Deferred.t =
+      Log.Global.info "Creating session for %s" name;
     ( match client_order_id_nonce with
-    | None -> Client_order_id.pipe ~prefix:name ()
+    | None -> (
+      Log.Global.info "Creating client order id pipe";
+      Client_order_id.pipe ~prefix:name () >>= fun pipe ->
+      Log.Global.info "Created client order id pipe";
+      return pipe)
     | Some nonce -> nonce |> return )
     >>= fun client_order_id_nonce ->
     Events.create ?symbols ?order_ids (module C) api_nonce >>| fun events ->

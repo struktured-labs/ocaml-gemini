@@ -46,7 +46,7 @@ module Error = struct
     [ `Json_parse_error of string
     | `Channel_parse_error of string
     ]
-  [@@deriving sexp, yojson]
+  [@@deriving sexp, yojson, equal, compare]
 end
 
 module type RESULT = sig

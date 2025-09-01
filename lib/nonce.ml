@@ -18,11 +18,21 @@ end
 
 module File = struct
   let create_nonce_file ?(default = 0) filename =
+    Log.Global.info_s [%message "Loading nonce file: " ~filename];
     try_with ~extract_exn:true (fun () ->
         Unix.with_file ~mode:[ `Rdonly ] filename ~f:(fun _fd -> Deferred.unit) )
     >>= function
     | Result.Ok _ -> Deferred.unit
-    | Result.Error _ -> Writer.save ~contents:(sprintf "%d\n" default) filename
+    | Result.Error e -> (
+      Log.Global.error_s
+        [%message
+          "Failed to open nonce file, creating a new one at"
+            ~filename
+            (e : exn)];
+      Log.Global.info_s [%message "Creating nonce file: " ~filename];
+      Writer.save ~contents:(sprintf "%d\n" default) filename
+
+    )
 
   type t = string [@@deriving sexp]
 
