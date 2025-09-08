@@ -170,6 +170,9 @@ module Make (Operation : Operation.S) = struct
               (Operation.sexp_of_request request |> Sexp.to_string);
             let config = Cfg.or_default config in
             Nonce.File.(pipe ~init:default_filename) () >>= fun nonce ->
+            Log.Global.info "submitting request %s to %s"
+              (Sexp.to_string (Operation.sexp_of_request request))
+              (Path.to_string Operation.path);
             post config nonce request >>= function
             | `Ok response ->
               Log.Global.info "response:\n %s"

@@ -311,7 +311,8 @@ module T = struct
         let symbol = Symbol.Enum_or_string.to_enum_exn enum_or_str_symbol in
         Order_book.Book.pipe_exn (module Cfg) ~symbol () >>= fun order_book ->
          Mytrades.post (module Cfg) nonce Mytrades.{symbol;timestamp;limit_trades=None} >>= fun trades ->
-         let init, trades_by_symbol = from_mytrades ?init ?avg_trade_prices (Poly_ok.ok_exn trades) in
+         let sexp_of_error = function `Ok _ -> assert false | #Rest.Error.post as e -> Rest.Error.sexp_of_post e in
+         let init, trades_by_symbol = from_mytrades ?init ?avg_trade_prices (Poly_ok.ok_exn ~sexp_of_error ~message: "trade load error"  ~here:[%here] trades) in
          let init = Map.find init enum_or_str_symbol |> Option.value ~default:(create ~symbol:enum_or_str_symbol ()) in
          let trade_pipe = Map.find trades_by_symbol enum_or_str_symbol |> Option.value_or_thunk ~default:Pipe.empty in
          pipe ~init order_book order_events >>| Pipe_ext.combine trade_pipe)

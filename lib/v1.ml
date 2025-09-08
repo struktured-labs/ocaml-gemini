@@ -297,7 +297,7 @@ module T = struct
 
       let path = path @ [ "balances" ]
 
-      type request = unit [@@deriving yojson, sexp]
+      type request = {account:string [@default "primary"]} [@@deriving yojson, sexp]
 
       type balance =
         { currency : Currency.Enum_or_string.t;
@@ -313,7 +313,7 @@ module T = struct
     end
 
     include T
-    include Rest.Make_no_arg (T)
+    include Rest.Make (T)
   end
 
   module Notional_volume = struct

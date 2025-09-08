@@ -345,7 +345,7 @@ module V1 : sig
       the REST api. *)
   module Balances : sig
     (** Balance queries have no request parameters. *)
-    type request = unit [@@deriving sexp, of_yojson]
+    type request = {account: string } [@@deriving sexp, of_yojson]
 
     (** The type of a balance for one specific currency. *)
     type balance =

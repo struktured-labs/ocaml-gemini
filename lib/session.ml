@@ -33,8 +33,8 @@ let trade_pipe cfg nonce symbol =
   Inf_pipe.unfold ~init:0 ~f:(fun epoch ->
       Mytrades.post cfg nonce request >>| fun response -> (response, epoch + 1) )
 
-let balance_pipe cfg nonce =
-  let request = () in
+let balance_pipe ?(account="primary") cfg nonce =
+  let request : Balances.request = {account} in
   Inf_pipe.unfold ~init:0 ~f:(fun epoch ->
       Balances.post cfg nonce request >>| fun response -> (response, epoch + 1) )
 
