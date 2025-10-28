@@ -10,14 +10,19 @@ let of_payload s : [< t > `Base64 ] =
   let cstruct = Cstruct.of_string base64 in
   `Base64 cstruct
 
-let hmac_sha384 ~api_secret (`Base64 payload) : [< t > `Hex ] =
-  let key = Cstruct.of_string api_secret in
-  Mirage_crypto.Hash.SHA384.hmac ~key payload |> Hex.of_cstruct
-
 (** Produce a string representation of the authentication token. *)
 let to_string : [< t ] -> string = function
   | `Base64 cstruct -> Cstruct.to_string cstruct
   | `Hex hex -> hex
+
+
+let hmac_sha384 ~api_secret (`Base64 payload) : [< t > `Hex ] =
+  let key = api_secret in
+  let payload = Cstruct.to_bytes payload in
+  let digest = Digestif.SHA384.hmac_bytes ~key payload in
+  let hex = Digestif.SHA384.to_hex digest in
+  `Hex hex
+
 
 (** Encode an authentication token as a gemini payload with an http header
     encoding. Use module [Cfg] to determine secrets and the api target. *)

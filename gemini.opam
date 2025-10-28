@@ -30,6 +30,7 @@ depends: [
   "ppx_deriving_yojson" {>= "3.7.0"}
   "ppx_csv_conv"
   "csvfields"
+  "digestif"
   "cohttp_async_websocket"
   "expect_test_helpers_core" {>= "v0.16.0"}
 ]

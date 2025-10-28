@@ -20,6 +20,7 @@
               yojson
               zarith
               mirage-crypto
+              digestif
               hex
               cohttp_async_websocket
   )
