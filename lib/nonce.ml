@@ -18,6 +18,7 @@ end
 
 module File = struct
   let create_nonce_file ?(default = 0) filename =
+    Unix.mkdir ~p:() (Filename.dirname filename) ~perm:0o700 >>= fun () ->
     try_with ~extract_exn:true (fun () ->
         Unix.with_file ~mode:[ `Rdonly ] filename ~f:(fun _fd -> Deferred.unit) )
     >>= function
