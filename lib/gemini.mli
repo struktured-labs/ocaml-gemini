@@ -18,6 +18,7 @@ module Rest = Rest
 module Result = Json.Result
 module Inf_pipe = Inf_pipe
 module Poly_ok = Poly_ok
+module Concurrent_map = Concurrent_map
 module Order_book = Order_book
 module Session = Session
 module Ledger = Ledger
