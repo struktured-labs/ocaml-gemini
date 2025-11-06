@@ -130,7 +130,7 @@ module Events = struct
     Order_events.client cfg ~nonce ?query:None ?uri_args:None ()
     >>= fun order_events ->
     Log.Global.info "Events.create: order_events.client ready";
-    let init = Symbol.Map.empty in
+    let init = Symbol.Map.of_alist_exn (List.map symbols ~f:(fun symbol -> (symbol, Ledger.Entry.create ~symbol:(Symbol.Enum_or_string.of_enum symbol) ()))) in
     let order_events, order_events_exn =
       Pipe.fork ~pushback_uses:`Fast_consumer_only order_events
     in
