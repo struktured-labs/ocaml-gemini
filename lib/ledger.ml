@@ -315,7 +315,9 @@ module T = struct
          let init = Map.find init enum_or_str_symbol |> Option.value ~default:(create ~symbol:enum_or_str_symbol ()) in
          let trade_pipe = Map.find trades_by_symbol enum_or_str_symbol |> Option.value_or_thunk ~default:Pipe.empty in
          pipe ~init order_book order_events >>| Pipe_ext.combine trade_pipe)
-  
+
+
+
 end
 
 module Entry (*: ENTRY *) = struct
@@ -382,6 +384,7 @@ module Ledger (*: S *) = struct
   let on_order_event_response t response =
     on_order_events t (Order_events.order_events_of_response response)
 
+
   let update_spots ?timestamp (pnl : t) (prices : float Symbol.Enum_or_string.Map.t) =
     Map.fold prices ~init:pnl ~f:(fun ~key:symbol ~data:price pnl ->
         Map.update pnl symbol ~f:(function
@@ -429,8 +432,6 @@ module Ledger (*: S *) = struct
                ~message:(sprintf "Invalid currency %s" s)
         | None -> failwithf "Invalid symbol %s" s () )
     in
-
-    
     Command.Param.(
       flag "--symbol"
         (optional (Command.Arg_type.create symbol_of_string))

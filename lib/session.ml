@@ -172,28 +172,82 @@ end
 module Make (C : Cfg.S) = struct
   type t =
     { name : string;
+      session_id : string;
       api_nonce : Nonce.reader;
       client_order_id_nonce : Client_order_id.reader;
       events : Events.t
     }
 
+  (** CSV-serializable state snapshot for persistence *)
+  module State_csv = struct
+    type t =
+      { name : string;
+        session_id : string;
+        timestamp_iso : string
+      }
+    [@@deriving sexp, fields, csv]
+  end
+
   let name t = t.name
+
+  let session_id t = t.session_id
 
   let api_nonce t = t.api_nonce
 
   let cfg (_t : t) = (module C : Cfg.S)
 
-  let create ?(name = "bot") ?symbols ?order_ids ~api_nonce
-      ?client_order_id_nonce () : t Deferred.t =
-    Log.Global.info "Session.create: start name=%s" name;
+  let to_state_csv (t : t) : State_csv.t =
+    { name = t.name; 
+      session_id = t.session_id; 
+      timestamp_iso = Time_float_unix.to_string_iso8601_basic (Time_float_unix.now ()) ~zone:Time_float_unix.Zone.utc
+    }
+
+  let write_state_csv ?(path = ".gemini_session_state.csv") (t : t) : unit Deferred.t =
+    let csv_row = to_state_csv t in
+    (* Check if file exists to determine if we need to write header *)
+    Sys.file_exists path >>= fun exists ->
+    let file_exists = match exists with `Yes -> true | _ -> false in
+    Writer.with_file path ~append:true ~f:(fun writer ->
+        ( if not file_exists then
+            (* Write CSV header using generated function *)
+            Writer.write_line writer (String.concat ~sep:"," State_csv.csv_header) );
+        (* Write CSV row using generated function *)
+        Writer.write_line writer (String.concat ~sep:"," (State_csv.row_of_t csv_row));
+        Deferred.unit )
+
+  let generate_session_id () =
+    (* Generate a unique session ID using timestamp and random component *)
+    let ts = Time_float_unix.now () |> Time_float_unix.to_span_since_epoch |> Time_ns.Span.of_span_float_round_nearest |> Time_ns.Span.to_int63_ns |> Int63.to_string in
+    let rand = Random.bits () |> Int.to_string in
+    sprintf "%s-%s" ts rand
+
+  let create ?(name = "bot") ?session_id ?symbols ?order_ids ~api_nonce
+      ?client_order_id_nonce ?state_csv_path () : t Deferred.t =
+    let session_id =
+      Option.value session_id
+        ~default:(generate_session_id ())
+    in
+    Log.Global.info "Session.create: start name=%s session_id=%s" name session_id;
     ( match client_order_id_nonce with
-    | None -> Client_order_id.pipe ~prefix:name ()
+    | None ->
+        (* Include session_id in the nonce prefix for session-specific ordering *)
+        let prefix = sprintf "%s-%s" name session_id in
+        Client_order_id.pipe ~prefix ()
     | Some nonce -> nonce |> return )
     >>= fun client_order_id_nonce ->
     Log.Global.info "Session.create: got client_order_id_nonce";
-    Events.create ?symbols ?order_ids (module C) api_nonce >>| fun events ->
+    Events.create ?symbols ?order_ids (module C) api_nonce >>= fun events ->
     Log.Global.info "Session.create: Events.create finished";
-    { name; events; api_nonce; client_order_id_nonce }
+    let t = { name; session_id; events; api_nonce; client_order_id_nonce } in
+    (* Write initial state - include session_id in filename if not explicitly provided *)
+    let state_csv_path = 
+      match state_csv_path with
+      | Some path -> path
+      | None -> sprintf ".gemini_session_state_%s.csv" session_id
+    in
+    write_state_csv ~path:state_csv_path t >>| fun () ->
+    Log.Global.info "Session.create: wrote initial state to %s" state_csv_path;
+    t
 
   module New_order_request = struct
     type t =
