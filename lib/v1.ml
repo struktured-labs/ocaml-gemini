@@ -25,6 +25,13 @@ module T = struct
 
       let path = path @ [ "heartbeat" ]
 
+      type uri_args = unit
+      let sexp_of_uri_args = Sexplib0.Sexp_conv.sexp_of_unit
+      let uri_args_of_sexp = Sexplib0.Sexp_conv.unit_of_sexp
+      let all_of_uri_args = [ () ]
+      let encode_uri_args (_:uri_args) = ""
+      let default_uri_args : uri_args option = None
+
       type request = unit [@@deriving sexp, yojson]
 
       type response = { result : bool [@default true] }
@@ -66,6 +73,13 @@ module T = struct
 
         let path = path @ [ "status" ]
 
+        type uri_args = unit
+        let sexp_of_uri_args = Sexplib0.Sexp_conv.sexp_of_unit
+        let uri_args_of_sexp = Sexplib0.Sexp_conv.unit_of_sexp
+        let all_of_uri_args = [ () ]
+        let encode_uri_args (_:uri_args) = ""
+        let default_uri_args : uri_args option = None
+
         type request = { order_id : Int_number.t } [@@deriving yojson, sexp]
 
         type response =
@@ -102,6 +116,13 @@ module T = struct
 
         let path = path @ [ "new" ]
 
+        type uri_args = unit
+        let sexp_of_uri_args = Sexplib0.Sexp_conv.sexp_of_unit
+        let uri_args_of_sexp = Sexplib0.Sexp_conv.unit_of_sexp
+        let all_of_uri_args = [ () ]
+        let encode_uri_args (_:uri_args) = ""
+        let default_uri_args : uri_args option = None
+
         type request =
           { client_order_id : Client_order_id.t;
             symbol : Symbol.t;
@@ -131,6 +152,13 @@ module T = struct
 
           let path = path
 
+          type uri_args = unit
+          let sexp_of_uri_args = Sexplib0.Sexp_conv.sexp_of_unit
+          let uri_args_of_sexp = Sexplib0.Sexp_conv.unit_of_sexp
+          let all_of_uri_args = [ () ]
+          let encode_uri_args (_:uri_args) = ""
+          let default_uri_args : uri_args option = None
+
           type request = { order_id : Int_string.t } [@@deriving sexp, yojson]
 
           type response = Status.response [@@deriving sexp, of_yojson]
@@ -152,6 +180,13 @@ module T = struct
 
           let path = path @ [ "all" ]
 
+          type uri_args = unit
+          let sexp_of_uri_args = Sexplib0.Sexp_conv.sexp_of_unit
+          let uri_args_of_sexp = Sexplib0.Sexp_conv.unit_of_sexp
+          let all_of_uri_args = [ () ]
+          let encode_uri_args (_:uri_args) = ""
+          let default_uri_args : uri_args option = None
+
           type request = unit [@@deriving sexp, yojson]
 
           type response = { details : details } [@@deriving sexp, of_yojson]
@@ -166,6 +201,13 @@ module T = struct
           let name = "session"
 
           let path = path @ [ "session" ]
+
+          type uri_args = unit
+          let sexp_of_uri_args = Sexplib0.Sexp_conv.sexp_of_unit
+          let uri_args_of_sexp = Sexplib0.Sexp_conv.unit_of_sexp
+          let all_of_uri_args = [ () ]
+          let encode_uri_args (_:uri_args) = ""
+          let default_uri_args : uri_args option = None
 
           type request = unit [@@deriving sexp, yojson]
 
@@ -195,6 +237,13 @@ module T = struct
       let name = "orders"
 
       let path = path @ [ "orders" ]
+
+      type uri_args = unit
+      let sexp_of_uri_args = Sexplib0.Sexp_conv.sexp_of_unit
+      let uri_args_of_sexp = Sexplib0.Sexp_conv.unit_of_sexp
+      let all_of_uri_args = [ () ]
+      let encode_uri_args (_:uri_args) = ""
+      let default_uri_args : uri_args option = None
 
       type request = unit [@@deriving sexp, yojson]
 
@@ -229,6 +278,13 @@ module T = struct
       let name = "mytrades"
 
       let path = path @ [ "mytrades" ]
+
+      type uri_args = unit
+      let sexp_of_uri_args = Sexplib0.Sexp_conv.sexp_of_unit
+      let uri_args_of_sexp = Sexplib0.Sexp_conv.unit_of_sexp
+      let all_of_uri_args = [ () ]
+      let encode_uri_args (_:uri_args) = ""
+      let default_uri_args : uri_args option = None
 
       type request =
         { symbol : Symbol.t;
@@ -274,6 +330,13 @@ module T = struct
 
       let path = path @ [ "tradevolume" ]
 
+      type uri_args = unit
+      let sexp_of_uri_args = Sexplib0.Sexp_conv.sexp_of_unit
+      let uri_args_of_sexp = Sexplib0.Sexp_conv.unit_of_sexp
+      let all_of_uri_args = [ () ]
+      let encode_uri_args (_:uri_args) = ""
+      let default_uri_args : uri_args option = None
+
       type request = unit [@@deriving yojson, sexp]
 
       type response = volume list [@@deriving sexp]
@@ -296,6 +359,13 @@ module T = struct
       let name = "balances"
 
       let path = path @ [ "balances" ]
+
+      type uri_args = unit
+      let sexp_of_uri_args = Sexplib0.Sexp_conv.sexp_of_unit
+      let uri_args_of_sexp = Sexplib0.Sexp_conv.unit_of_sexp
+      let all_of_uri_args = [ () ]
+      let encode_uri_args (_:uri_args) = ""
+      let default_uri_args : uri_args option = None
 
       type request = unit [@@deriving yojson, sexp]
 
@@ -321,6 +391,13 @@ module T = struct
       let name = "notionalvolume"
 
       let path = path @ [ "notionalvolume" ]
+
+      type uri_args = unit
+      let sexp_of_uri_args = Sexplib0.Sexp_conv.sexp_of_unit
+      let uri_args_of_sexp = Sexplib0.Sexp_conv.unit_of_sexp
+      let all_of_uri_args = [ () ]
+      let encode_uri_args (_:uri_args) = ""
+      let default_uri_args : uri_args option = None
 
       type request =
         { symbol : Symbol.t option; [@default None]
@@ -356,6 +433,91 @@ module T = struct
 
     include T
     include Rest.Make (T)
+  end
+
+  module Symbol_details = struct
+    (* https://docs.gemini.com/rest/market-data#get-symbol-details *)
+    module T = struct
+      let name = "symboldetails"
+
+      let path = path @ [ "symbols"; "details" ]
+
+      type uri_args = Symbol.t
+      let sexp_of_uri_args = Symbol.sexp_of_t
+      let uri_args_of_sexp = Symbol.t_of_sexp
+      let all_of_uri_args = Symbol.all
+      let encode_uri_args (s:uri_args) = Symbol.to_string s
+      let default_uri_args : uri_args option = None
+
+      type request = { symbol : Symbol.t } [@@deriving yojson, sexp]
+
+      type response =
+        { symbol : Symbol.Enum_or_string.t;
+          base_currency : Currency.Enum_or_string.t;
+          quote_currency : Currency.Enum_or_string.t;
+          tick_size : Decimal_number.t;
+          quote_increment : Decimal_number.t;
+          min_order_size : Decimal_string.t;
+          status : string;
+          wrap_enabled : bool;
+          product_type : string;
+          contract_type : string;
+          contract_price_currency : Currency.Enum_or_string.t
+        }
+      [@@deriving yojson, sexp]
+    end
+
+    include T
+    module Impl = Rest.Make (T)
+
+    let post (module Cfg : Cfg.S) ?uri_args _nonce (req : T.request) =
+      let symbol = Option.value uri_args ~default:req.symbol in
+      let segments = path @ [ Symbol.to_string symbol ] in
+      let path_str = Path.to_string segments in
+      let uri = Uri.make ~scheme:"https" ~host:Cfg.api_host ~path:path_str () in
+      Cohttp_async.Client.get uri >>= fun (response, body) ->
+      match Cohttp.Response.status response with
+      | `OK ->
+        Cohttp_async.Body.to_string body >>| fun s ->
+        let yojson = Yojson.Safe.from_string s in
+        (match T.response_of_yojson yojson with
+         | Result.Ok x -> `Ok x
+         | Result.Error e -> `Json_parse_error Rest.Error.{ message = e; body = s })
+      | `Not_found -> return `Not_found
+      | `Not_acceptable -> Cohttp_async.Body.to_string body >>| fun b -> `Not_acceptable b
+      | `Bad_request -> Cohttp_async.Body.to_string body >>| fun b -> `Bad_request b
+      | `Service_unavailable -> Cohttp_async.Body.to_string body >>| fun b -> `Service_unavailable b
+      | `Unauthorized -> Cohttp_async.Body.to_string body >>| fun b -> `Unauthorized b
+      | (code : Cohttp.Code.status_code) ->
+        Cohttp_async.Body.to_string body >>| fun b ->
+        failwiths ~here:[%here]
+          (sprintf "unexpected status code (body=%S)" b)
+          code Cohttp.Code.sexp_of_status_code
+
+    let command : string * Command.t =
+      let open Command.Let_syntax in
+      ( name,
+        Command.async
+          ~summary:(Path.to_summary ~has_subnames:false path)
+          [%map_open
+            let config = Cfg.param
+            and request = anon ("request" %: sexp) in
+            fun () ->
+              let request = T.request_of_sexp request in
+              Log.Global.info "request:\n %s"
+                (T.sexp_of_request request |> Sexp.to_string);
+              let config = Cfg.or_default config in
+              Nonce.File.(pipe ~init:default_filename) () >>= fun nonce ->
+              post config ~uri_args:request.symbol nonce request >>= function
+              | `Ok response ->
+                Log.Global.info "response:\n %s"
+                  (Sexp.to_string_hum (T.sexp_of_response response));
+                Log.Global.flushed ()
+              | #Rest.Error.post as post_error ->
+                failwiths ~here:[%here]
+                  (sprintf "post for operation %S failed"
+                     (Path.to_string path) )
+                  post_error Rest.Error.sexp_of_post] )
   end
 end
 

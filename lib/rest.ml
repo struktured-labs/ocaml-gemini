@@ -38,13 +38,22 @@ module Operation = struct
 
     val path : string list
 
+    (** Uri arguments which are appended to the end of the path segment *)
+    type uri_args [@@deriving sexp, enumerate]
+
+    (** Encder from well typed uri arguments to a string suitable for a uri. *)
+    val encode_uri_args : uri_args -> string
+    
+    (** Defaut uri arguments. Optional for some channels. *)
+    val default_uri_args : uri_args option
+
     type request [@@deriving sexp, to_yojson]
 
     type response [@@deriving sexp, of_yojson]
   end
 
   module type S_NO_ARG = sig
-    include S with type request = unit
+    include S with type request = unit and type uri_args = unit
   end
 end
 
@@ -112,24 +121,36 @@ end
 module Post (Operation : Operation.S) : sig
   val post :
     (module Cfg.S) ->
-    Nonce.reader ->
+    ?uri_args:Operation.uri_args ->
+    Nonce.reader ->     
     Operation.request ->
     [ `Ok of Operation.response | Error.post ] Deferred.t
 end = struct
-  let post (module Cfg : Cfg.S) (nonce : Nonce.reader)
+  let post (module Cfg : Cfg.S) ?uri_args (nonce : Nonce.reader)
       (request : Operation.request) :
       [ `Ok of Operation.response | Error.post ] Deferred.t =
     let payload = Operation.request_to_yojson request in
-    let path = Path.to_string Operation.path in
+    let uri_args =
+      match uri_args with
+      | Some a -> Some a
+      | None -> Operation.default_uri_args
+    in
+    let segments =
+      Operation.path
+      @ (match uri_args with
+        | None -> []
+        | Some a ->
+          let s = Operation.encode_uri_args a in
+          if String.(s = "") then [] else [ s ])
+    in
+    let path = Path.to_string segments in
     Request.make ~nonce ~request:path ~payload () >>= fun request ->
     ( Request.to_yojson request |> Yojson.Safe.pretty_to_string |> fun s ->
-      Log.Global.debug "request as json:\n %s" s;
+      Log.Global.info "request as json:\n %s" s;
       return @@ Auth.of_payload s )
     >>= fun payload ->
     let headers = Auth.to_headers (module Cfg) payload in
-    let uri =
-      Uri.make ~scheme:"https" ~host:Cfg.api_host ~path ?query:None ()
-    in
+    let uri = Uri.make ~scheme:"https" ~host:Cfg.api_host ~path ?query:None () in
     Cohttp_async.Client.post ~headers ?chunked:None ?interrupt:None
       ?ssl_config:None ?body:None uri
     >>= fun (response, body) ->

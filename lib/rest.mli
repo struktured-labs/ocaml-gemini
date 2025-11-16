@@ -58,6 +58,16 @@ module Operation : sig
     (** The uri path of the REST endpoint. *)
     val path : string list
 
+
+    type uri_args [@@deriving sexp, enumerate]
+
+    (** Optional uri arguments for this REST endpoint. *)
+    val encode_uri_args : uri_args -> string
+
+    (** Default uri arguments for this REST endpoint when omitted. *)
+    val default_uri_args : uri_args option
+
+    
     (** The type of the request payload for this REST endpoint. *)
     type request [@@deriving sexp, to_yojson]
 
@@ -67,7 +77,7 @@ module Operation : sig
 
   (** A REST operation endpoint which takes no request parameters. *)
   module type S_NO_ARG = sig
-    include S with type request = unit
+    include S with type request = unit and type uri_args = unit
   end
 end
 
@@ -78,7 +88,7 @@ module Response : sig
       [ `Error
       | `Ok
       ]
-    [@@derivin sexp, yojson, enumerate]
+    [@@deriving sexp, yojson, enumerate]
 
     val to_string : t -> string
 
@@ -113,6 +123,7 @@ end
 module Post : functor (Operation : Operation.S) -> sig
   val post :
     (module Cfg.S) ->
+    ?uri_args:Operation.uri_args ->
     Nonce.reader ->
     Operation.request ->
     [ `Ok of Operation.response | Error.post ] Deferred.t
@@ -123,6 +134,7 @@ end
 module Make : functor (Operation : Operation.S) -> sig
   val post :
     (module Cfg.S) ->
+    ?uri_args:Operation.uri_args ->
     Nonce.reader ->
     Operation.request ->
     [ `Ok of Operation.response | Error.post ] Deferred.t
@@ -136,6 +148,7 @@ end
 module Make_no_arg : functor (Operation : Operation.S_NO_ARG) -> sig
   val post :
     (module Cfg.S) ->
+    ?uri_args:Operation.uri_args ->
     Nonce.reader ->
     unit ->
     [ Error.post | `Ok of Operation.response ] Deferred.t

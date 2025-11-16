@@ -41,6 +41,7 @@ module V1 : sig
 
     val post :
       (module Cfg.S) ->
+      ?uri_args:uri_args ->
       Nonce.reader ->
       request ->
       [ Rest.Error.post | `Ok of response ] Deferred.t
@@ -112,6 +113,7 @@ module V1 : sig
 
       val post :
         (module Cfg.S) ->
+        ?uri_args:uri_args ->
         Nonce.reader ->
         request ->
         [ Rest.Error.post | `Ok of response ] Deferred.t
@@ -142,6 +144,7 @@ module V1 : sig
 
       val post :
         (module Cfg.S) ->
+        ?uri_args:uri_args ->
         Nonce.reader ->
         request ->
         [ Rest.Error.post | `Ok of response ] Deferred.t
@@ -168,6 +171,7 @@ module V1 : sig
 
         val post :
           (module Cfg.S) ->
+          ?uri_args:uri_args ->
           Nonce.reader ->
           request ->
           [ Rest.Error.post | `Ok of response ] Deferred.t
@@ -193,6 +197,7 @@ module V1 : sig
 
         val post :
           (module Cfg.S) ->
+          ?uri_args:uri_args ->
           Nonce.reader ->
           request ->
           [ Rest.Error.post | `Ok of response ] Deferred.t
@@ -212,6 +217,7 @@ module V1 : sig
 
         val post :
           (module Cfg.S) ->
+          ?uri_args:uri_args ->
           Nonce.reader ->
           request ->
           [ Rest.Error.post | `Ok of response ] Deferred.t
@@ -239,6 +245,7 @@ module V1 : sig
 
     val post :
       (module Cfg.S) ->
+      ?uri_args:uri_args ->
       Nonce.reader ->
       request ->
       [ Rest.Error.post | `Ok of response ] Deferred.t
@@ -287,6 +294,7 @@ module V1 : sig
 
     val post :
       (module Cfg.S) ->
+      ?uri_args:uri_args ->
       Nonce.reader ->
       request ->
       [ Rest.Error.post | `Ok of response ] Deferred.t
@@ -335,6 +343,7 @@ module V1 : sig
 
     val post :
       (module Cfg.S) ->
+      ?uri_args:uri_args ->
       Nonce.reader ->
       request ->
       [ Rest.Error.post | `Ok of response ] Deferred.t
@@ -368,6 +377,7 @@ module V1 : sig
 
     val post :
       (module Cfg.S) ->
+      ?uri_args:uri_args ->
       Nonce.reader ->
       request ->
       [ Rest.Error.post | `Ok of response ] Deferred.t
@@ -414,6 +424,7 @@ module V1 : sig
 
     val post :
       (module Cfg.S) ->
+      ?uri_args:uri_args ->
       Nonce.reader ->
       request ->
       [ Rest.Error.post | `Ok of response ] Deferred.t
