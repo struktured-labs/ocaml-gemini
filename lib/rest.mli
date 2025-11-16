@@ -57,16 +57,6 @@ module Operation : sig
 
     (** The uri path of the REST endpoint. *)
     val path : string list
-
-
-    type uri_args [@@deriving sexp, enumerate]
-
-    (** Optional uri arguments for this REST endpoint. *)
-    val encode_uri_args : uri_args -> string
-
-    (** Default uri arguments for this REST endpoint when omitted. *)
-    val default_uri_args : uri_args option
-
     
     (** The type of the request payload for this REST endpoint. *)
     type request [@@deriving sexp, to_yojson]
@@ -77,7 +67,7 @@ module Operation : sig
 
   (** A REST operation endpoint which takes no request parameters. *)
   module type S_NO_ARG = sig
-    include S with type request = unit and type uri_args = unit
+    include S with type request = unit
   end
 end
 
@@ -123,7 +113,6 @@ end
 module Post : functor (Operation : Operation.S) -> sig
   val post :
     (module Cfg.S) ->
-    ?uri_args:Operation.uri_args ->
     Nonce.reader ->
     Operation.request ->
     [ `Ok of Operation.response | Error.post ] Deferred.t
@@ -134,7 +123,6 @@ end
 module Make : functor (Operation : Operation.S) -> sig
   val post :
     (module Cfg.S) ->
-    ?uri_args:Operation.uri_args ->
     Nonce.reader ->
     Operation.request ->
     [ `Ok of Operation.response | Error.post ] Deferred.t
@@ -148,10 +136,35 @@ end
 module Make_no_arg : functor (Operation : Operation.S_NO_ARG) -> sig
   val post :
     (module Cfg.S) ->
-    ?uri_args:Operation.uri_args ->
     Nonce.reader ->
     unit ->
     [ Error.post | `Ok of Operation.response ] Deferred.t
 
   val command : string * Core.Command.t
+end
+
+(** GET endpoints that append uri_args to the path and parse the body directly. *)
+module Get : sig
+  module type S = sig
+    val name : string
+    val path : string list
+
+    type uri_args [@@deriving sexp, enumerate]
+    val encode_uri_args : uri_args -> string
+
+    type request [@@deriving sexp]
+    val uri_args_of_request : request -> uri_args option
+
+    type response [@@deriving sexp, of_yojson]
+  end
+
+  module Make : functor (Operation : S) -> sig
+    val get :
+      (module Cfg.S) ->
+      Nonce.reader ->
+      Operation.request ->
+      [ Error.post | `Ok of Operation.response ] Deferred.t
+
+    val command : string * Core.Command.t
+  end
 end

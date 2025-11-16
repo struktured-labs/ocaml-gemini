@@ -41,7 +41,6 @@ module V1 : sig
 
     val post :
       (module Cfg.S) ->
-      ?uri_args:uri_args ->
       Nonce.reader ->
       request ->
       [ Rest.Error.post | `Ok of response ] Deferred.t
@@ -113,7 +112,6 @@ module V1 : sig
 
       val post :
         (module Cfg.S) ->
-        ?uri_args:uri_args ->
         Nonce.reader ->
         request ->
         [ Rest.Error.post | `Ok of response ] Deferred.t
@@ -144,7 +142,6 @@ module V1 : sig
 
       val post :
         (module Cfg.S) ->
-        ?uri_args:uri_args ->
         Nonce.reader ->
         request ->
         [ Rest.Error.post | `Ok of response ] Deferred.t
@@ -171,7 +168,6 @@ module V1 : sig
 
         val post :
           (module Cfg.S) ->
-          ?uri_args:uri_args ->
           Nonce.reader ->
           request ->
           [ Rest.Error.post | `Ok of response ] Deferred.t
@@ -197,7 +193,6 @@ module V1 : sig
 
         val post :
           (module Cfg.S) ->
-          ?uri_args:uri_args ->
           Nonce.reader ->
           request ->
           [ Rest.Error.post | `Ok of response ] Deferred.t
@@ -217,7 +212,6 @@ module V1 : sig
 
         val post :
           (module Cfg.S) ->
-          ?uri_args:uri_args ->
           Nonce.reader ->
           request ->
           [ Rest.Error.post | `Ok of response ] Deferred.t
@@ -245,7 +239,6 @@ module V1 : sig
 
     val post :
       (module Cfg.S) ->
-      ?uri_args:uri_args ->
       Nonce.reader ->
       request ->
       [ Rest.Error.post | `Ok of response ] Deferred.t
@@ -294,7 +287,6 @@ module V1 : sig
 
     val post :
       (module Cfg.S) ->
-      ?uri_args:uri_args ->
       Nonce.reader ->
       request ->
       [ Rest.Error.post | `Ok of response ] Deferred.t
@@ -343,7 +335,6 @@ module V1 : sig
 
     val post :
       (module Cfg.S) ->
-      ?uri_args:uri_args ->
       Nonce.reader ->
       request ->
       [ Rest.Error.post | `Ok of response ] Deferred.t
@@ -377,7 +368,6 @@ module V1 : sig
 
     val post :
       (module Cfg.S) ->
-      ?uri_args:uri_args ->
       Nonce.reader ->
       request ->
       [ Rest.Error.post | `Ok of response ] Deferred.t
@@ -424,7 +414,34 @@ module V1 : sig
 
     val post :
       (module Cfg.S) ->
-      ?uri_args:uri_args ->
+      Nonce.reader ->
+      request ->
+      [ Rest.Error.post | `Ok of response ] Deferred.t
+
+    val command : string * Command.t
+  end
+
+  (** Gets symbol details for a specific symbol using a GET endpoint. *)
+  module Symbol_details : sig
+    type request = { symbol : Symbol.t } [@@deriving sexp]
+
+    type response =
+      { symbol : Symbol.Enum_or_string.t;
+        base_currency : Currency.Enum_or_string.t;
+        quote_currency : Currency.Enum_or_string.t;
+        tick_size : Decimal_number.t;
+        quote_increment : Decimal_number.t;
+        min_order_size : Decimal_string.t;
+        status : string;
+        wrap_enabled : bool;
+        product_type : string;
+        contract_type : string;
+        contract_price_currency : Currency.Enum_or_string.t
+      }
+    [@@deriving sexp]
+
+    val get :
+      (module Cfg.S) ->
       Nonce.reader ->
       request ->
       [ Rest.Error.post | `Ok of response ] Deferred.t

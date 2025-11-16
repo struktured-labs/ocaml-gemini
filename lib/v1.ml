@@ -447,9 +447,9 @@ module T = struct
       let uri_args_of_sexp = Symbol.t_of_sexp
       let all_of_uri_args = Symbol.all
       let encode_uri_args (s:uri_args) = Symbol.to_string s
-      let default_uri_args : uri_args option = None
-
-      type request = { symbol : Symbol.t } [@@deriving yojson, sexp]
+      
+      type request = { symbol : Symbol.t } [@@deriving sexp]
+      let uri_args_of_request (r:request) = Some r.symbol
 
       type response =
         { symbol : Symbol.Enum_or_string.t;
@@ -468,56 +468,7 @@ module T = struct
     end
 
     include T
-    module Impl = Rest.Make (T)
-
-    let post (module Cfg : Cfg.S) ?uri_args _nonce (req : T.request) =
-      let symbol = Option.value uri_args ~default:req.symbol in
-      let segments = path @ [ Symbol.to_string symbol ] in
-      let path_str = Path.to_string segments in
-      let uri = Uri.make ~scheme:"https" ~host:Cfg.api_host ~path:path_str () in
-      Cohttp_async.Client.get uri >>= fun (response, body) ->
-      match Cohttp.Response.status response with
-      | `OK ->
-        Cohttp_async.Body.to_string body >>| fun s ->
-        let yojson = Yojson.Safe.from_string s in
-        (match T.response_of_yojson yojson with
-         | Result.Ok x -> `Ok x
-         | Result.Error e -> `Json_parse_error Rest.Error.{ message = e; body = s })
-      | `Not_found -> return `Not_found
-      | `Not_acceptable -> Cohttp_async.Body.to_string body >>| fun b -> `Not_acceptable b
-      | `Bad_request -> Cohttp_async.Body.to_string body >>| fun b -> `Bad_request b
-      | `Service_unavailable -> Cohttp_async.Body.to_string body >>| fun b -> `Service_unavailable b
-      | `Unauthorized -> Cohttp_async.Body.to_string body >>| fun b -> `Unauthorized b
-      | (code : Cohttp.Code.status_code) ->
-        Cohttp_async.Body.to_string body >>| fun b ->
-        failwiths ~here:[%here]
-          (sprintf "unexpected status code (body=%S)" b)
-          code Cohttp.Code.sexp_of_status_code
-
-    let command : string * Command.t =
-      let open Command.Let_syntax in
-      ( name,
-        Command.async
-          ~summary:(Path.to_summary ~has_subnames:false path)
-          [%map_open
-            let config = Cfg.param
-            and request = anon ("request" %: sexp) in
-            fun () ->
-              let request = T.request_of_sexp request in
-              Log.Global.info "request:\n %s"
-                (T.sexp_of_request request |> Sexp.to_string);
-              let config = Cfg.or_default config in
-              Nonce.File.(pipe ~init:default_filename) () >>= fun nonce ->
-              post config ~uri_args:request.symbol nonce request >>= function
-              | `Ok response ->
-                Log.Global.info "response:\n %s"
-                  (Sexp.to_string_hum (T.sexp_of_response response));
-                Log.Global.flushed ()
-              | #Rest.Error.post as post_error ->
-                failwiths ~here:[%here]
-                  (sprintf "post for operation %S failed"
-                     (Path.to_string path) )
-                  post_error Rest.Error.sexp_of_post] )
+    include Rest.Get.Make (T)
   end
 end
 

@@ -38,22 +38,13 @@ module Operation = struct
 
     val path : string list
 
-    (** Uri arguments which are appended to the end of the path segment *)
-    type uri_args [@@deriving sexp, enumerate]
-
-    (** Encder from well typed uri arguments to a string suitable for a uri. *)
-    val encode_uri_args : uri_args -> string
-    
-    (** Defaut uri arguments. Optional for some channels. *)
-    val default_uri_args : uri_args option
-
     type request [@@deriving sexp, to_yojson]
 
     type response [@@deriving sexp, of_yojson]
   end
 
   module type S_NO_ARG = sig
-    include S with type request = unit and type uri_args = unit
+    include S with type request = unit
   end
 end
 
@@ -121,29 +112,15 @@ end
 module Post (Operation : Operation.S) : sig
   val post :
     (module Cfg.S) ->
-    ?uri_args:Operation.uri_args ->
     Nonce.reader ->     
     Operation.request ->
     [ `Ok of Operation.response | Error.post ] Deferred.t
 end = struct
-  let post (module Cfg : Cfg.S) ?uri_args (nonce : Nonce.reader)
+  let post (module Cfg : Cfg.S) (nonce : Nonce.reader)
       (request : Operation.request) :
       [ `Ok of Operation.response | Error.post ] Deferred.t =
     let payload = Operation.request_to_yojson request in
-    let uri_args =
-      match uri_args with
-      | Some a -> Some a
-      | None -> Operation.default_uri_args
-    in
-    let segments =
-      Operation.path
-      @ (match uri_args with
-        | None -> []
-        | Some a ->
-          let s = Operation.encode_uri_args a in
-          if String.(s = "") then [] else [ s ])
-    in
-    let path = Path.to_string segments in
+    let path = Path.to_string Operation.path in
     Request.make ~nonce ~request:path ~payload () >>= fun request ->
     ( Request.to_yojson request |> Yojson.Safe.pretty_to_string |> fun s ->
       Log.Global.info "request as json:\n %s" s;
@@ -227,4 +204,74 @@ module Make_no_arg (Operation : Operation.S_NO_ARG) = struct
                 (sprintf "post for operation %S failed"
                    (Path.to_string Operation.path) )
                 post_error Error.sexp_of_post] )
+end
+
+module Get = struct
+  module type S = sig
+    val name : string
+    val path : string list
+
+    type uri_args [@@deriving sexp, enumerate]
+    val encode_uri_args : uri_args -> string
+
+    type request [@@deriving sexp]
+    val uri_args_of_request : request -> uri_args option
+
+    type response [@@deriving sexp, of_yojson]
+  end
+
+  module Make (Operation : S) = struct
+    let get (module Cfg : Cfg.S) _nonce (request : Operation.request) =
+      let segments =
+        match Operation.uri_args_of_request request with
+        | None -> Operation.path
+        | Some args -> Operation.path @ [ Operation.encode_uri_args args ]
+      in
+      let path = Path.to_string segments in
+      let uri = Uri.make ~scheme:"https" ~host:Cfg.api_host ~path () in
+      Cohttp_async.Client.get uri >>= fun (response, body) ->
+      match Cohttp.Response.status response with
+      | `OK ->
+        Cohttp_async.Body.to_string body >>| fun s ->
+        let yojson = Yojson.Safe.from_string s in
+        (match Operation.response_of_yojson yojson with
+         | Result.Ok x -> `Ok x
+         | Result.Error e ->
+           `Json_parse_error Error.{ message = e; body = s })
+      | `Not_found -> return `Not_found
+      | `Not_acceptable -> Cohttp_async.Body.to_string body >>| fun b -> `Not_acceptable b
+      | `Bad_request -> Cohttp_async.Body.to_string body >>| fun b -> `Bad_request b
+      | `Service_unavailable -> Cohttp_async.Body.to_string body >>| fun b -> `Service_unavailable b
+      | `Unauthorized -> Cohttp_async.Body.to_string body >>| fun b -> `Unauthorized b
+      | (code : Cohttp.Code.status_code) ->
+        Cohttp_async.Body.to_string body >>| fun b ->
+        failwiths ~here:[%here]
+          (sprintf "unexpected status code (body=%S)" b)
+          code Cohttp.Code.sexp_of_status_code
+
+    let command =
+      let open Command.Let_syntax in
+      ( Operation.name,
+        Command.async
+          ~summary:(Path.to_summary ~has_subnames:false Operation.path)
+          [%map_open
+            let config = Cfg.param
+            and request = anon ("request" %: sexp) in
+            fun () ->
+              let request = Operation.request_of_sexp request in
+              Log.Global.info "request:\n %s"
+                (Operation.sexp_of_request request |> Sexp.to_string);
+              let config = Cfg.or_default config in
+              Nonce.File.(pipe ~init:default_filename) () >>= fun nonce ->
+              get config nonce request >>= function
+              | `Ok response ->
+                Log.Global.info "response:\n %s"
+                  (Sexp.to_string_hum (Operation.sexp_of_response response));
+                Log.Global.flushed ()
+              | #Error.post as post_error ->
+                failwiths ~here:[%here]
+                  (sprintf "get for operation %S failed"
+                     (Path.to_string Operation.path) )
+                  post_error Error.sexp_of_post] )
+  end
 end
