@@ -30,6 +30,8 @@ module Error = struct
     | response
     ]
   [@@deriving sexp]
+
+  type get = post [@@deriving sexp]
 end
 
 module Operation = struct
@@ -214,21 +216,22 @@ module Get = struct
     type uri_args [@@deriving sexp, enumerate]
     val encode_uri_args : uri_args -> string
 
-    type request [@@deriving sexp]
-    val uri_args_of_request : request -> uri_args option
+    val default_uri_args : uri_args option [@@deriving sexp]
 
     type response [@@deriving sexp, of_yojson]
-  end
+   
+   end
 
   module Make (Operation : S) = struct
-    let get (module Cfg : Cfg.S) _nonce (request : Operation.request) =
-      let segments =
-        match Operation.uri_args_of_request request with
-        | None -> Operation.path
-        | Some args -> Operation.path @ [ Operation.encode_uri_args args ]
+    let get (module Cfg : Cfg.S) _nonce ?uri_args () =
+       let uri =
+          Uri.make ~host:Cfg.api_host ~scheme:"https" ?query:None
+            ~path:
+              (String.concat ~sep:"/"
+              ( Operation.path
+              @ Option.(map ~f:Operation.encode_uri_args uri_args |> to_list) ) )
+          ()
       in
-      let path = Path.to_string segments in
-      let uri = Uri.make ~scheme:"https" ~host:Cfg.api_host ~path () in
       Cohttp_async.Client.get uri >>= fun (response, body) ->
       match Cohttp.Response.status response with
       | `OK ->
@@ -256,14 +259,17 @@ module Get = struct
           ~summary:(Path.to_summary ~has_subnames:false Operation.path)
           [%map_open
             let config = Cfg.param
-            and request = anon ("request" %: sexp) in
+            and uri_args = anon (maybe ("uri_args" %: sexp)) in
             fun () ->
-              let request = Operation.request_of_sexp request in
-              Log.Global.info "request:\n %s"
-                (Operation.sexp_of_request request |> Sexp.to_string);
+               let uri_args =
+              Option.first_some
+              (Option.map ~f:Operation.uri_args_of_sexp uri_args)
+              Operation.default_uri_args
+              in
               let config = Cfg.or_default config in
               Nonce.File.(pipe ~init:default_filename) () >>= fun nonce ->
-              get config nonce request >>= function
+                
+              get config nonce ?uri_args () >>= function
               | `Ok response ->
                 Log.Global.info "response:\n %s"
                   (Sexp.to_string_hum (Operation.sexp_of_response response));

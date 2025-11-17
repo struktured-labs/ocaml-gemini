@@ -421,9 +421,10 @@ module V1 : sig
     val command : string * Command.t
   end
 
-  (** Gets symbol details for a specific symbol using a GET endpoint. *)
+  (** Gets symbol details for a specific symbol using a GET endpoint on the
+      Gemini trading exchange. *)
   module Symbol_details : sig
-    type request = { symbol : Symbol.t } [@@deriving sexp]
+    type uri_args = Symbol.t [@@deriving sexp]
 
     type response =
       { symbol : Symbol.Enum_or_string.t;
@@ -443,8 +444,9 @@ module V1 : sig
     val get :
       (module Cfg.S) ->
       Nonce.reader ->
-      request ->
-      [ Rest.Error.post | `Ok of response ] Deferred.t
+      ?uri_args:uri_args ->
+      unit ->
+      [ Rest.Error.get | `Ok of response ] Deferred.t
 
     val command : string * Command.t
   end

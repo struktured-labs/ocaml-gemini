@@ -44,6 +44,8 @@ module Error : sig
     | response
     ]
   [@@deriving sexp]
+
+  type get = post [@@deriving sexp]
 end
 
 module Request = Nonce.Request
@@ -152,9 +154,7 @@ module Get : sig
     type uri_args [@@deriving sexp, enumerate]
     val encode_uri_args : uri_args -> string
 
-    type request [@@deriving sexp]
-    val uri_args_of_request : request -> uri_args option
-
+    val default_uri_args : uri_args option [@@deriving sexp]
     type response [@@deriving sexp, of_yojson]
   end
 
@@ -162,8 +162,8 @@ module Get : sig
     val get :
       (module Cfg.S) ->
       Nonce.reader ->
-      Operation.request ->
-      [ Error.post | `Ok of Operation.response ] Deferred.t
+      ?uri_args: Operation.uri_args -> unit ->
+      [ Error.get | `Ok of Operation.response ] Deferred.t
 
     val command : string * Core.Command.t
   end

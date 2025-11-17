@@ -442,14 +442,10 @@ module T = struct
 
       let path = path @ [ "symbols"; "details" ]
 
-      type uri_args = Symbol.t
-      let sexp_of_uri_args = Symbol.sexp_of_t
-      let uri_args_of_sexp = Symbol.t_of_sexp
-      let all_of_uri_args = Symbol.all
+      type uri_args = Symbol.t [@@deriving sexp, enumerate]
       let encode_uri_args (s:uri_args) = Symbol.to_string s
       
-      type request = { symbol : Symbol.t } [@@deriving sexp]
-      let uri_args_of_request (r:request) = Some r.symbol
+      let default_uri_args : uri_args option = Some `Btcusd
 
       type response =
         { symbol : Symbol.Enum_or_string.t;
