@@ -54,7 +54,8 @@ module Events = struct
       ledger : Ledger.Entry.t Pipe.Reader.t Symbol.Map.t;
       order_books :
         [ `Ok of Order_book.Book.t | Market_data.Error.t ] Pipe.Reader.t
-        Symbol.Map.t
+        Symbol.Map.t;
+      symbol_details : Symbol_details.response Symbol.Map.t
     }
 
   let create ?(symbols : Symbol.t list = []) ?(order_ids : Order_id.t list = [])
@@ -149,15 +150,29 @@ module Events = struct
     Log.Global.info "Events.create: starting Ledger.pipe";
     Ledger.pipe ?num_values:None ?how:None ?behavior:None ~init order_books_exn
       order_events_exn
-    >>| fun ledger ->
-    Log.Global.info "Events.create: finished Ledger.pipe, assembling record";
+    >>= fun ledger ->
+    Log.Global.info "Events.create: finished Ledger.pipe, fetching symbol details";
+    Deferred.List.map symbols ~how:`Parallel ~f:(fun symbol ->
+        Symbol_details.get cfg nonce ~uri_args:symbol () >>| function
+        | `Ok details -> Some (symbol, details)
+        | #Rest.Error.get as error ->
+            Log.Global.error "Failed to fetch symbol details for %s: %s"
+              (Symbol.to_string symbol) (Rest.Error.sexp_of_get error |> Sexp.to_string);
+            None)
+    >>| fun details_list ->
+    let symbol_details =
+      List.filter_map details_list ~f:Fn.id |> Symbol.Map.of_alist_exn
+    in
+    Log.Global.info "Events.create: fetched %d symbol details, assembling record"
+      (Map.length symbol_details);
     { balance;
       trades;
       order_status;
       order_events;
       market_data;
       order_books;
-      ledger
+      ledger;
+      symbol_details
     }
 
   let balance (t : t) = t.balance
@@ -195,6 +210,49 @@ module Make (C : Cfg.S) = struct
   let api_nonce t = t.api_nonce
 
   let cfg (_t : t) = (module C : Cfg.S)
+
+  let symbol_details t symbol =
+    Map.find t.events.symbol_details symbol
+
+  let symbol_details_exn t symbol =
+    match symbol_details t symbol with
+    | Some details -> details
+    | None -> failwithf "No symbol details found for %s" (Symbol.to_string symbol) ()
+
+  (* Format a price with the correct precision based on tick_size *)
+  let format_price t symbol price : Common.Decimal_string.t =
+    match symbol_details t symbol with
+    | None ->
+        Log.Global.error "No symbol details for %s, using default precision" (Symbol.to_string symbol);
+        Float.to_string price
+    | Some details ->
+        let tick_size = details.tick_size in
+        (* Calculate decimal places from tick_size *)
+        let decimal_places =
+           match Float.(tick_size >= 1.0) with
+           | true -> 0
+           | false ->
+            let log_val = Float.log10 tick_size in
+            Int.of_float (Float.abs (Float.round_down log_val))
+        in
+        sprintf "%.*f" decimal_places price
+
+  (* Format a quantity with the correct precision based on quote_increment *)
+  let format_quantity t symbol quantity =
+    match symbol_details t symbol with
+    | None ->
+        Log.Global.error "No symbol details for %s, using default precision" (Symbol.to_string symbol);
+        Float.to_string quantity
+    | Some details ->
+        let quote_increment = details.quote_increment in
+        (* Calculate decimal places from quote_increment *)
+        let decimal_places =
+          if Float.(quote_increment >= 1.0) then 0
+          else
+            let log_val = Float.log10 quote_increment in
+            Int.of_float (Float.abs (Float.round_down log_val))
+        in
+        sprintf "%.*f" decimal_places quantity
 
   let to_state_csv (t : t) : State_csv.t =
     { name = t.name; 

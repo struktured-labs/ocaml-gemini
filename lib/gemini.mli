@@ -424,7 +424,7 @@ module V1 : sig
   (** Gets symbol details for a specific symbol using a GET endpoint on the
       Gemini trading exchange. *)
   module Symbol_details : sig
-    type uri_args = Symbol.t [@@deriving sexp]
+    type uri_args = Symbol.t [@@deriving sexp, enumerate]
 
     type response =
       { symbol : Symbol.Enum_or_string.t;
