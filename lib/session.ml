@@ -219,6 +219,15 @@ module Make (C : Cfg.S) = struct
     | Some details -> details
     | None -> failwithf "No symbol details found for %s" (Symbol.to_string symbol) ()
 
+  let min_order_size t symbol =
+    let details = symbol_details t symbol in
+    Option.map details ~f:(fun d -> d.min_order_size |> Float.of_string)
+
+  let min_order_size_exn t symbol =
+    match min_order_size t symbol with
+    | Some size -> size
+    | None -> failwithf "No symbol details found for %s" (Symbol.to_string symbol) ()
+    
   (* Format a price with the correct precision based on tick_size *)
   let format_price t symbol price : Common.Decimal_string.t =
     match symbol_details t symbol with
@@ -329,8 +338,20 @@ module Make (C : Cfg.S) = struct
       api
   end
 
-  let submit_order t (req : New_order_request.t) :
+  let submit_order ?(autoformat=`All) t (req : New_order_request.t) :
       [ `Ok of Order.New.response * status_pipe | Error.post ] Deferred.t =
+    let req = match autoformat with
+    | `All ->
+        let formatted_price = format_price t req.symbol (Float.of_string req.price) in
+        let formatted_quantity = format_quantity t req.symbol (Float.of_string req.amount) in
+        {req with price = formatted_price; amount = formatted_quantity}      
+    | `Price ->
+        let formatted_price = format_price t req.symbol (Float.of_string req.price) in
+        {req with price = formatted_price}
+    | `Quantity -> 
+        let formatted_quantity = format_quantity t req.symbol (Float.of_string req.amount) in
+        {req with amount = formatted_quantity}
+    | `None -> req in
     Inf_pipe.read t.client_order_id_nonce >>= fun client_order_id ->
     let req = New_order_request.to_api ~client_order_id req in
     Order.New.post (cfg t) t.api_nonce req >>| function
