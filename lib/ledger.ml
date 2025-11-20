@@ -128,7 +128,7 @@ module T = struct
       let running_price =
         match running_qty with
         | 0. -> 0.
-        | _ -> t.cost_basis /. running_qty in
+        | _ -> cost_basis /. running_qty in
       Log.Global.info "package_price=%f t.notional=%f notional_sign=%f notional=%f signed_t_notitional=%f" package_price t.notional notional_sign notional signed_notional;
       { t with
         spot = price;
