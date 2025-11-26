@@ -30,6 +30,8 @@ module Error = struct
     | response
     ]
   [@@deriving sexp]
+
+  type get = post [@@deriving sexp]
 end
 
 module Operation = struct
@@ -112,7 +114,7 @@ end
 module Post (Operation : Operation.S) : sig
   val post :
     (module Cfg.S) ->
-    Nonce.reader ->
+    Nonce.reader ->     
     Operation.request ->
     [ `Ok of Operation.response | Error.post ] Deferred.t
 end = struct
@@ -123,13 +125,11 @@ end = struct
     let path = Path.to_string Operation.path in
     Request.make ~nonce ~request:path ~payload () >>= fun request ->
     ( Request.to_yojson request |> Yojson.Safe.pretty_to_string |> fun s ->
-      Log.Global.debug "request as json:\n %s" s;
+      Log.Global.info "request as json:\n %s" s;
       return @@ Auth.of_payload s )
     >>= fun payload ->
     let headers = Auth.to_headers (module Cfg) payload in
-    let uri =
-      Uri.make ~scheme:"https" ~host:Cfg.api_host ~path ?query:None ()
-    in
+    let uri = Uri.make ~scheme:"https" ~host:Cfg.api_host ~path ?query:None () in
     Cohttp_async.Client.post ~headers ?chunked:None ?interrupt:None
       ?ssl_config:None ?body:None uri
     >>= fun (response, body) ->
@@ -206,4 +206,78 @@ module Make_no_arg (Operation : Operation.S_NO_ARG) = struct
                 (sprintf "post for operation %S failed"
                    (Path.to_string Operation.path) )
                 post_error Error.sexp_of_post] )
+end
+
+module Get = struct
+  module type S = sig
+    val name : string
+    val path : string list
+
+    type uri_args [@@deriving sexp, enumerate]
+    val encode_uri_args : uri_args -> string
+
+    val default_uri_args : uri_args option [@@deriving sexp]
+
+    type response [@@deriving sexp, of_yojson]
+   
+   end
+
+  module Make (Operation : S) = struct
+    let get (module Cfg : Cfg.S) _nonce ?uri_args () =
+       let uri =
+          Uri.make ~host:Cfg.api_host ~scheme:"https" ?query:None
+            ~path:
+              (String.concat ~sep:"/"
+              ( Operation.path
+              @ Option.(map ~f:Operation.encode_uri_args uri_args |> to_list) ) )
+          ()
+      in
+      Cohttp_async.Client.get uri >>= fun (response, body) ->
+      match Cohttp.Response.status response with
+      | `OK ->
+        Cohttp_async.Body.to_string body >>| fun s ->
+        let yojson = Yojson.Safe.from_string s in
+        (match Operation.response_of_yojson yojson with
+         | Result.Ok x -> `Ok x
+         | Result.Error e ->
+           `Json_parse_error Error.{ message = e; body = s })
+      | `Not_found -> return `Not_found
+      | `Not_acceptable -> Cohttp_async.Body.to_string body >>| fun b -> `Not_acceptable b
+      | `Bad_request -> Cohttp_async.Body.to_string body >>| fun b -> `Bad_request b
+      | `Service_unavailable -> Cohttp_async.Body.to_string body >>| fun b -> `Service_unavailable b
+      | `Unauthorized -> Cohttp_async.Body.to_string body >>| fun b -> `Unauthorized b
+      | (code : Cohttp.Code.status_code) ->
+        Cohttp_async.Body.to_string body >>| fun b ->
+        failwiths ~here:[%here]
+          (sprintf "unexpected status code (body=%S)" b)
+          code Cohttp.Code.sexp_of_status_code
+
+    let command =
+      let open Command.Let_syntax in
+      ( Operation.name,
+        Command.async
+          ~summary:(Path.to_summary ~has_subnames:false Operation.path)
+          [%map_open
+            let config = Cfg.param
+            and uri_args = anon (maybe ("uri_args" %: sexp)) in
+            fun () ->
+               let uri_args =
+              Option.first_some
+              (Option.map ~f:Operation.uri_args_of_sexp uri_args)
+              Operation.default_uri_args
+              in
+              let config = Cfg.or_default config in
+              Nonce.File.(pipe ~init:default_filename) () >>= fun nonce ->
+                
+              get config nonce ?uri_args () >>= function
+              | `Ok response ->
+                Log.Global.info "response:\n %s"
+                  (Sexp.to_string_hum (Operation.sexp_of_response response));
+                Log.Global.flushed ()
+              | #Error.post as post_error ->
+                failwiths ~here:[%here]
+                  (sprintf "get for operation %S failed"
+                     (Path.to_string Operation.path) )
+                  post_error Error.sexp_of_post] )
+  end
 end

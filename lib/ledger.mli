@@ -5,9 +5,10 @@ module Update_source : sig
   type t =
     [ `Market_data
     | `Trade
-    | `External_trade
-    ]
+    | `External_trade    
+    ] (** Source of the most recent update (market data, trade, external, bootstrap). *)
   [@@deriving equal, compare, enumerate]
+  
 
   include Json.S with type t := t
 end

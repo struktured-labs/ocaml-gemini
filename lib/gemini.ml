@@ -7,6 +7,7 @@ module Result = Json.Result
 module Inf_pipe = Inf_pipe
 module Poly_ok = Poly_ok
 module Pipe_ext = Pipe_ext
+module Concurrent_map = Concurrent_map
 module V1 = V1
 module Order_book = Order_book
 module Ledger = Ledger
@@ -26,5 +27,6 @@ let command : Command.t =
       Notional_volume.command;
       Order_book.command;
       Ledger.command;
-      Symbols.command
+      Symbols.command;
+      Symbol_details.command
     ]

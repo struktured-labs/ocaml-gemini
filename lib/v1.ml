@@ -25,6 +25,13 @@ module T = struct
 
       let path = path @ [ "heartbeat" ]
 
+      type uri_args = unit
+      let sexp_of_uri_args = Sexplib0.Sexp_conv.sexp_of_unit
+      let uri_args_of_sexp = Sexplib0.Sexp_conv.unit_of_sexp
+      let all_of_uri_args = [ () ]
+      let encode_uri_args (_:uri_args) = ""
+      let default_uri_args : uri_args option = None
+
       type request = unit [@@deriving sexp, yojson]
 
       type response = { result : bool [@default true] }
@@ -66,6 +73,13 @@ module T = struct
 
         let path = path @ [ "status" ]
 
+        type uri_args = unit
+        let sexp_of_uri_args = Sexplib0.Sexp_conv.sexp_of_unit
+        let uri_args_of_sexp = Sexplib0.Sexp_conv.unit_of_sexp
+        let all_of_uri_args = [ () ]
+        let encode_uri_args (_:uri_args) = ""
+        let default_uri_args : uri_args option = None
+
         type request = { order_id : Int_number.t } [@@deriving yojson, sexp]
 
         type response =
@@ -102,6 +116,13 @@ module T = struct
 
         let path = path @ [ "new" ]
 
+        type uri_args = unit
+        let sexp_of_uri_args = Sexplib0.Sexp_conv.sexp_of_unit
+        let uri_args_of_sexp = Sexplib0.Sexp_conv.unit_of_sexp
+        let all_of_uri_args = [ () ]
+        let encode_uri_args (_:uri_args) = ""
+        let default_uri_args : uri_args option = None
+
         type request =
           { client_order_id : Client_order_id.t;
             symbol : Symbol.t;
@@ -131,6 +152,13 @@ module T = struct
 
           let path = path
 
+          type uri_args = unit
+          let sexp_of_uri_args = Sexplib0.Sexp_conv.sexp_of_unit
+          let uri_args_of_sexp = Sexplib0.Sexp_conv.unit_of_sexp
+          let all_of_uri_args = [ () ]
+          let encode_uri_args (_:uri_args) = ""
+          let default_uri_args : uri_args option = None
+
           type request = { order_id : Int_string.t } [@@deriving sexp, yojson]
 
           type response = Status.response [@@deriving sexp, of_yojson]
@@ -152,6 +180,13 @@ module T = struct
 
           let path = path @ [ "all" ]
 
+          type uri_args = unit
+          let sexp_of_uri_args = Sexplib0.Sexp_conv.sexp_of_unit
+          let uri_args_of_sexp = Sexplib0.Sexp_conv.unit_of_sexp
+          let all_of_uri_args = [ () ]
+          let encode_uri_args (_:uri_args) = ""
+          let default_uri_args : uri_args option = None
+
           type request = unit [@@deriving sexp, yojson]
 
           type response = { details : details } [@@deriving sexp, of_yojson]
@@ -166,6 +201,13 @@ module T = struct
           let name = "session"
 
           let path = path @ [ "session" ]
+
+          type uri_args = unit
+          let sexp_of_uri_args = Sexplib0.Sexp_conv.sexp_of_unit
+          let uri_args_of_sexp = Sexplib0.Sexp_conv.unit_of_sexp
+          let all_of_uri_args = [ () ]
+          let encode_uri_args (_:uri_args) = ""
+          let default_uri_args : uri_args option = None
 
           type request = unit [@@deriving sexp, yojson]
 
@@ -195,6 +237,13 @@ module T = struct
       let name = "orders"
 
       let path = path @ [ "orders" ]
+
+      type uri_args = unit
+      let sexp_of_uri_args = Sexplib0.Sexp_conv.sexp_of_unit
+      let uri_args_of_sexp = Sexplib0.Sexp_conv.unit_of_sexp
+      let all_of_uri_args = [ () ]
+      let encode_uri_args (_:uri_args) = ""
+      let default_uri_args : uri_args option = None
 
       type request = unit [@@deriving sexp, yojson]
 
@@ -229,6 +278,13 @@ module T = struct
       let name = "mytrades"
 
       let path = path @ [ "mytrades" ]
+
+      type uri_args = unit
+      let sexp_of_uri_args = Sexplib0.Sexp_conv.sexp_of_unit
+      let uri_args_of_sexp = Sexplib0.Sexp_conv.unit_of_sexp
+      let all_of_uri_args = [ () ]
+      let encode_uri_args (_:uri_args) = ""
+      let default_uri_args : uri_args option = None
 
       type request =
         { symbol : Symbol.t;
@@ -274,6 +330,13 @@ module T = struct
 
       let path = path @ [ "tradevolume" ]
 
+      type uri_args = unit
+      let sexp_of_uri_args = Sexplib0.Sexp_conv.sexp_of_unit
+      let uri_args_of_sexp = Sexplib0.Sexp_conv.unit_of_sexp
+      let all_of_uri_args = [ () ]
+      let encode_uri_args (_:uri_args) = ""
+      let default_uri_args : uri_args option = None
+
       type request = unit [@@deriving yojson, sexp]
 
       type response = volume list [@@deriving sexp]
@@ -296,6 +359,13 @@ module T = struct
       let name = "balances"
 
       let path = path @ [ "balances" ]
+
+      type uri_args = unit
+      let sexp_of_uri_args = Sexplib0.Sexp_conv.sexp_of_unit
+      let uri_args_of_sexp = Sexplib0.Sexp_conv.unit_of_sexp
+      let all_of_uri_args = [ () ]
+      let encode_uri_args (_:uri_args) = ""
+      let default_uri_args : uri_args option = None
 
       type request = unit [@@deriving yojson, sexp]
 
@@ -321,6 +391,13 @@ module T = struct
       let name = "notionalvolume"
 
       let path = path @ [ "notionalvolume" ]
+
+      type uri_args = unit
+      let sexp_of_uri_args = Sexplib0.Sexp_conv.sexp_of_unit
+      let uri_args_of_sexp = Sexplib0.Sexp_conv.unit_of_sexp
+      let all_of_uri_args = [ () ]
+      let encode_uri_args (_:uri_args) = ""
+      let default_uri_args : uri_args option = None
 
       type request =
         { symbol : Symbol.t option; [@default None]
@@ -356,6 +433,38 @@ module T = struct
 
     include T
     include Rest.Make (T)
+  end
+
+  module Symbol_details = struct
+    (* https://docs.gemini.com/rest/market-data#get-symbol-details *)
+    module T = struct
+      let name = "symboldetails"
+
+      let path = path @ [ "symbols"; "details" ]
+
+      type uri_args = Symbol.t [@@deriving sexp, enumerate]
+      let encode_uri_args (s:uri_args) = Symbol.to_string s
+      
+      let default_uri_args : uri_args option = Some `Btcusd
+
+      type response =
+        { symbol : Symbol.Enum_or_string.t;
+          base_currency : Currency.Enum_or_string.t;
+          quote_currency : Currency.Enum_or_string.t;
+          tick_size : Decimal_number.t;
+          quote_increment : Decimal_number.t;
+          min_order_size : Decimal_string.t;
+          status : string;
+          wrap_enabled : bool;
+          product_type : string;
+          contract_type : string;
+          contract_price_currency : Currency.Enum_or_string.t
+        }
+      [@@deriving yojson, sexp]
+    end
+
+    include T
+    include Rest.Get.Make (T)
   end
 end
 

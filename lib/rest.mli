@@ -44,6 +44,8 @@ module Error : sig
     | response
     ]
   [@@deriving sexp]
+
+  type get = post [@@deriving sexp]
 end
 
 module Request = Nonce.Request
@@ -57,7 +59,7 @@ module Operation : sig
 
     (** The uri path of the REST endpoint. *)
     val path : string list
-
+    
     (** The type of the request payload for this REST endpoint. *)
     type request [@@deriving sexp, to_yojson]
 
@@ -78,7 +80,7 @@ module Response : sig
       [ `Error
       | `Ok
       ]
-    [@@derivin sexp, yojson, enumerate]
+    [@@deriving sexp, yojson, enumerate]
 
     val to_string : t -> string
 
@@ -141,4 +143,28 @@ module Make_no_arg : functor (Operation : Operation.S_NO_ARG) -> sig
     [ Error.post | `Ok of Operation.response ] Deferred.t
 
   val command : string * Core.Command.t
+end
+
+(** GET endpoints that append uri_args to the path and parse the body directly. *)
+module Get : sig
+  module type S = sig
+    val name : string
+    val path : string list
+
+    type uri_args [@@deriving sexp, enumerate]
+    val encode_uri_args : uri_args -> string
+
+    val default_uri_args : uri_args option [@@deriving sexp]
+    type response [@@deriving sexp, of_yojson]
+  end
+
+  module Make : functor (Operation : S) -> sig
+    val get :
+      (module Cfg.S) ->
+      Nonce.reader ->
+      ?uri_args: Operation.uri_args -> unit ->
+      [ Error.get | `Ok of Operation.response ] Deferred.t
+
+    val command : string * Core.Command.t
+  end
 end

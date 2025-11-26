@@ -95,11 +95,13 @@ module T = struct
 
   module Reject_reason = struct
     module T = struct
-      type t = [ `Invalid_quantity ]
+      type t = [ `Invalid_quantity | `Insufficient_funds ]
       [@@deriving sexp, enumerate, compare, equal]
 
       let to_string = function
         | `Invalid_quantity -> "InvalidQuantity"
+        | `Insufficient_funds -> "InsufficientFunds"
+
     end
 
     include T
