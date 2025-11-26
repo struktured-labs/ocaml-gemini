@@ -3,7 +3,7 @@ open Gemini
 
 (* Test the actual decimal place calculation logic extracted from Session.format_price *)
 let calc_decimal_places tick_size =
-  Session.calc_decimal_places_from_tick_size tick_size
+  Session.calc_decimal_places_from tick_size
 
 let%expect_test "decimal place calculation from tick_size" =
   (* tick_size >= 1.0 should give 0 decimals *)

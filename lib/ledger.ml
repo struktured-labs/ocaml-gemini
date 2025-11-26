@@ -311,7 +311,8 @@ module T = struct
         let symbol = Symbol.Enum_or_string.to_enum_exn enum_or_str_symbol in
         Order_book.Book.pipe_exn (module Cfg) ~symbol () >>= fun order_book ->
          Mytrades.post (module Cfg) nonce Mytrades.{symbol;timestamp;limit_trades=None} >>= fun trades ->
-         let init, trades_by_symbol = from_mytrades ?init ?avg_trade_prices (Poly_ok.ok_exn trades) in
+         let init, trades_by_symbol = from_mytrades ?init ?avg_trade_prices 
+          (Poly_ok.ok_exn ~message:"Error processing my own trades" ~here:[%here] trades) in
          let init = Map.find init enum_or_str_symbol |> Option.value ~default:(create ~symbol:enum_or_str_symbol ()) in
          let trade_pipe = Map.find trades_by_symbol enum_or_str_symbol |> Option.value_or_thunk ~default:Pipe.empty in
          pipe ~init order_book order_events >>| Pipe_ext.combine trade_pipe)
@@ -388,10 +389,11 @@ module Ledger (*: S *) = struct
           | None -> Entry.create ~symbol ()
           | Some t -> Entry.update_spot ?timestamp t price ) )
 
-  let ok_exn' x = Poly_ok.ok_exn x
   let with_csv_writer ?(how=`Parallel) ?dir ?timestamp ?avg_trade_prices config symbols =
     Nonce.File.default () >>= fun nonce ->
-    Order_events.client config ~nonce () >>= fun order_events -> (Pipe.map order_events ~f:ok_exn' |> return) >>= fun order_events ->
+    Order_events.client config ~nonce () >>= fun order_events -> 
+      (Pipe.map order_events ~f:(Poly_ok.ok_exn ?sexp_of_error:None ~here:[%here] ~message:"Order events error" )
+      |> return) >>= fun order_events ->
     T.from_mytrades_pipe ~how ?timestamp ?avg_trade_prices ~symbols ~nonce config order_events >>=
     fun symbol_to_reader ->
       let result = Deferred.Map.mapi ~how symbol_to_reader ~f:

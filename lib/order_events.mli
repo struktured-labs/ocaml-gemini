@@ -63,7 +63,7 @@ module Reason : sig
 end
 
 module Reject_reason : sig
-  type t = [ `Invalid_quantity ] [@@deriving sexp, enumerate]
+  type t = [ `Invalid_quantity | `Insufficient_funds ] [@@deriving sexp, enumerate]
 
   include Json.ENUM_STRING with type t := t
 end

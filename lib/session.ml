@@ -144,9 +144,11 @@ module Events = struct
     in
     Log.Global.debug "Events.create: forked order_books";
     let order_books_exn =
-      Map.map ~f:(Pipe.map ~f:Poly_ok.ok_exn') order_books_exn
+      Map.map ~f:(Pipe.map ~f:
+      (Poly_ok.ok_exn ?sexp_of_error:None ~here:[%here] ~message:"Order books error")) order_books_exn
     in
-    let order_events_exn = Pipe.map ~f:Poly_ok.ok_exn' order_events_exn in
+    let order_events_exn = Pipe.map ~f:
+      (Poly_ok.ok_exn ?sexp_of_error:None ~here:[%here] ~message:"Order events error") order_events_exn in
     Log.Global.info "Events.create: starting Ledger.pipe";
     Ledger.pipe ?num_values:None ?how:None ?behavior:None ~init order_books_exn
       order_events_exn
@@ -184,11 +186,11 @@ module Events = struct
   let order_events (t : t) = t.order_events
 end
 
-let calc_decimal_places_from_tick_size tick_size =
-  match Float.(tick_size >= 1.0) with
+let calc_decimal_places_from value =
+  match Float.(value >= 1.0) with
   | true -> 0
   | false ->
-    let log_val = Float.log10 tick_size in
+    let log_val = Float.log10 value in
     Int.of_float (Float.abs (Float.round_down log_val))
 
 module Make (C : Cfg.S) = struct
@@ -242,8 +244,10 @@ module Make (C : Cfg.S) = struct
         Log.Global.error "No symbol details for %s, using default precision" (Symbol.to_string symbol);
         Float.to_string price
     | Some details ->
-        let decimal_places = calc_decimal_places_from_tick_size details.tick_size in
-        sprintf "%.*f" decimal_places price
+        let decimal_places = calc_decimal_places_from details.quote_increment in
+        let formatted_price = sprintf "%.*f" decimal_places price in
+        Log.Global.debug "Formatting price %.9f for %s with %d decimal places as %s" price (Symbol.to_string symbol) decimal_places formatted_price;
+        formatted_price
 
   (* Format a quantity with the correct precision based on quote_increment *)
   let format_quantity t symbol quantity =
@@ -252,9 +256,11 @@ module Make (C : Cfg.S) = struct
         Log.Global.error "No symbol details for %s, using default precision" (Symbol.to_string symbol);
         Float.to_string quantity
     | Some details ->
-        let decimal_places = calc_decimal_places_from_tick_size details.quote_increment in
-        sprintf "%.*f" decimal_places quantity
-
+        let decimal_places = calc_decimal_places_from details.tick_size in
+        let formatted = sprintf "%.*f" decimal_places quantity in
+        Log.Global.debug "Formatting quantity %.9f for %s with %d decimal places as %s" quantity (Symbol.to_string symbol) decimal_places formatted;
+        formatted
+        
   let to_state_csv (t : t) : State_csv.t =
     { name = t.name; 
       session_id = t.session_id; 

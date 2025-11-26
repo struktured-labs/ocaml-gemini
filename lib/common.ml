@@ -377,12 +377,14 @@ module Order_type = struct
     type t =
       [ `Exchange_limit
       | `Stop_limit
+      | `Unspecified
       ]
     [@@deriving sexp, enumerate, equal, compare]
 
     let to_string = function
       | `Exchange_limit -> "exchange limit"
       | `Stop_limit -> "stop-limit"
+      | `Unspecified -> ""
   end
 
   include T
