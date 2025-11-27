@@ -316,6 +316,7 @@ module Symbol = struct
       | `Rndrusd
       | `Chillguyusd
       | `Elonusd
+      | `Trumpusd
       ]
     [@@deriving sexp, enumerate, equal, compare]
   end
