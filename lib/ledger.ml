@@ -291,6 +291,28 @@ module T = struct
          let trade_pipe = Map.find trades_by_symbol enum_or_str_symbol |> Option.value_or_thunk ~default:Pipe.empty in
          pipe ~init order_book order_events >>| Pipe_ext.combine trade_pipe)
   
+  let from_balances ?(notional_currency = `Usd) (response : V1.Balances.balance list) :
+      t Symbol.Enum_or_string.Map.t =
+    List.fold response ~init:Symbol.Enum_or_string.Map.empty ~f:(fun acc balance ->
+      let currency = balance.currency in
+      let position = Float.of_string balance.amount in
+      (* Only create entries for non-zero positions *)
+      match Float.(position > 0.) with
+      | false -> acc
+      | true ->
+        (* For each currency, try to map it to a trading pair with notional_currency *)
+        let open Option.Let_syntax in
+        let symbol_opt = 
+          let%bind currency_enum = Currency.Enum_or_string.to_enum currency in
+          let%map symbol = Symbol.of_currency_pair currency_enum notional_currency in
+          Symbol.Enum_or_string.of_enum symbol
+        in
+        match symbol_opt with
+        | None -> acc
+        | Some symbol ->
+          let entry = create ~symbol ~position () in
+          Map.set acc ~key:symbol ~data:entry)
+
 end
 
 module Entry (*: ENTRY *) = struct
