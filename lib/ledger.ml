@@ -21,63 +21,37 @@ end
 module T = struct
   type t =
     { symbol : Symbol.Enum_or_string.t;
-      pnl : float;
-      position : float;
-      spot : float;
-      pnl_spot : float;
-      notional : float;
-      avg_buy_price: float;
-      avg_sell_price: float;
-      avg_price: float;
+      pnl : float [@default 0.0];
+      position : float [@default 0.0];
+      spot : float [@default 0.0];
+      pnl_spot : float [@default 0.0];
+      notional : float [@default 0.0];
+      avg_buy_price: float [@default 0.0];
+      avg_sell_price: float [@default 0.0];
+      avg_price: float [@default 0.0];
       update_time : Timestamp.t;
-      update_source : Update_source.t;
-      total_buy_qty: float;
-      total_sell_qty: float;
-      price: Price.Option.t;
-      side: Side.Option.t;
-      qty: Decimal_number.Option.t;
-      package_price: Price.Option.t;
-      buy_notional: float;
-      sell_notional: float;
-      total_original: float;
-      total_executed: float;
-      total_remaining: float;
-      cost_basis: float;
-      running_price: float;
-      running_qty: float;
+      update_source : Update_source.t [@default `Market_data];
+      total_buy_qty: float [@default 0.0];
+      total_sell_qty: float [@default 0.0];
+      price: Price.Option.t [@default None];
+      side: Side.Option.t [@default None];
+      qty: Decimal_number.Option.t [@default None];
+      package_price: Price.Option.t [@default None];
+      buy_notional: float [@default 0.0];
+      sell_notional: float [@default 0.0];
+      total_original: float [@default 0.0];
+      total_executed: float [@default 0.0];
+      total_remaining: float [@default 0.0];
+      cost_basis: float [@default 0.0];
+      running_price: float [@default 0.0];
+      running_qty: float [@default 0.0]
   }
-  [@@deriving sexp, compare, equal, fields, csv]
+  [@@deriving sexp, compare, equal, fields, csv, make]
 
-
-  let create ?(notional = 0.0) ?(update_source = `Market_data) ?update_time
-      ~(symbol : Symbol.Enum_or_string.t) () : t =
-    { symbol;
-      pnl = 0.;
-      spot = Float.nan;
-      notional;
-      pnl_spot = 0.;
-      position = 0.;
-      avg_buy_price= 0.;
-      avg_sell_price=0.;
-      avg_price=0.;
-      update_source;
-      update_time = Option.value_or_thunk update_time ~default:Timestamp.now;
-      total_buy_qty=0.;
-      total_sell_qty=0.;
-      price=None;
-      qty=None;
-      side=None;
-      buy_notional=0.;
-      sell_notional=0.;
-      package_price=None;
-      total_executed=0.;
-      total_original=0.;  
-      total_remaining=0.;
-      cost_basis=0.;
-      running_price = 0.;
-      running_qty=0.;
-    }
-
+  let create ?update_time =
+    let update_time = Option.value_or_thunk update_time ~default:Timestamp.now in
+    make_t ~update_time
+    
   let rec on_trade ?(update_source = `Trade) ?timestamp
       ?(avg_trade_price : float option) t ~(price : float) ~(side : Side.t)
       ~(qty : float) : t =

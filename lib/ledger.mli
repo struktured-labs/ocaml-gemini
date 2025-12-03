@@ -69,10 +69,31 @@ module Entry : sig
   [@@deriving sexp, compare, equal, fields, csv]
 
   val create :
-    ?notional:float ->
-    ?update_source:Update_source.t ->
     ?update_time:Timestamp.t ->
     symbol:Symbol.Enum_or_string.t ->
+    ?pnl:float ->
+    ?position:float ->
+    ?spot:float ->
+    ?pnl_spot:float ->
+    ?notional:float ->
+    ?avg_buy_price:float ->
+    ?avg_sell_price:float ->
+    ?avg_price:float ->
+    ?update_source:Update_source.t ->
+    ?total_buy_qty:float ->
+    ?total_sell_qty:float ->
+    ?price:Price.Option.t ->
+    ?side:Side.Option.t ->
+    ?qty:Decimal_number.Option.t ->
+    ?package_price:Price.Option.t ->
+    ?buy_notional:float ->
+    ?sell_notional:float ->
+    ?total_original:float ->
+    ?total_executed:float ->
+    ?total_remaining:float ->
+    ?cost_basis:float ->
+    ?running_price:float ->
+    ?running_qty:float ->
     unit ->
     t
 
