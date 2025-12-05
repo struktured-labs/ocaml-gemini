@@ -95,13 +95,14 @@ module T = struct
 
   module Reject_reason = struct
     module T = struct
-      type t = [ `Invalid_quantity | `Insufficient_funds | `SelfCrossPrevented ]
+      type t = [ `Invalid_quantity | `Insufficient_funds | `Self_cross_prevented | `Immediate_or_cancel_would_post ]
       [@@deriving sexp, enumerate, compare, equal]
 
       let to_string = function
         | `Invalid_quantity -> "InvalidQuantity"
         | `Insufficient_funds -> "InsufficientFunds"
-        | `SelfCrossPrevented -> "SelfCrossPrevented"
+        | `Self_cross_prevented -> "SelfCrossPrevented"
+        | `Immediate_or_cancel_would_post -> "ImmediateOrCancelWouldPost"
 
     end
 
