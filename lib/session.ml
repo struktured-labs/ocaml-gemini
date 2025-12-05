@@ -283,18 +283,49 @@ module Make (C : Cfg.S) = struct
       timestamp_iso = Time_float_unix.to_string_iso8601_basic (Time_float_unix.now ()) ~zone:Time_float_unix.Zone.utc
     }
 
+  (* Cache writers per path to avoid reopening the CSV file on every write. *)
+  let writer_cache : (string, Writer.t * bool ref) Hashtbl.t =
+    Hashtbl.create (module String)
+
+  let close_all_writers () =
+    Hashtbl.iter writer_cache ~f:(fun (w, _) -> don't_wait_for (Writer.close w))
+
+  let () =
+    Shutdown.at_shutdown (fun () ->
+        close_all_writers ();
+        Deferred.unit)
+
+  let header_needed path exists =
+    match exists with
+    | `No | `Unknown -> true
+    | `Yes -> (
+        try
+          let stat = Core_unix.stat path in
+          Int64.(equal stat.st_size zero)
+        with
+        | _ -> true )
+
+  let get_writer path header : (Writer.t * bool ref) Deferred.t =
+    match Hashtbl.find writer_cache path with
+    | Some entry -> return entry
+    | None ->
+        Sys.file_exists path >>= fun exists ->
+        Writer.open_file ~append:true path >>= fun w ->
+        let header_written = ref (not (header_needed path exists)) in
+        Hashtbl.set writer_cache ~key:path ~data:(w, header_written);
+        ( if not !header_written then (
+            Writer.write_line w header;
+            header_written := true;
+            Writer.flushed w )
+          else Deferred.unit )
+        >>| fun () -> (w, header_written)
+
   let write_state_csv ?(path = ".gemini_session_state.csv") (t : t) : unit Deferred.t =
     let csv_row = to_state_csv t in
-    (* Check if file exists to determine if we need to write header *)
-    Sys.file_exists path >>= fun exists ->
-    Writer.with_file path ~append:true ~f:(fun writer ->
-        (match exists with
-        | `Yes -> Deferred.unit
-        | `No | `Unknown ->
-            Writer.write_line writer (String.concat ~sep:"," State_csv.csv_header);
-            Deferred.unit) >>= fun () ->
-        Writer.write_line writer (String.concat ~sep:"," (State_csv.row_of_t csv_row));
-        Deferred.unit)
+    get_writer path (String.concat ~sep:"," State_csv.csv_header) >>= fun (w, _)
+      ->
+    Writer.write_line w (String.concat ~sep:"," (State_csv.row_of_t csv_row));
+    Writer.flushed w
 
   let generate_session_id () =
     (* Generate a unique session ID using timestamp and random component *)
