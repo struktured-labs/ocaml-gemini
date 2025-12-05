@@ -381,12 +381,16 @@ module Order_type = struct
       [ `Exchange_limit
       | `Stop_limit
       | `Unspecified
+      | `Market_sell
+      | `Market_buy
       ]
     [@@deriving sexp, enumerate, equal, compare]
 
     let to_string = function
       | `Exchange_limit -> "exchange limit"
-      | `Stop_limit -> "stop-limit"
+      | `Stop_limit -> "stop limit"
+      | `Market_buy -> "market buy"
+      | `Market_sell -> "market sell"
       | `Unspecified -> ""
   end
 
