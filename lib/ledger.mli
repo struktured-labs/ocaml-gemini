@@ -69,10 +69,31 @@ module Entry : sig
   [@@deriving sexp, compare, equal, fields, csv]
 
   val create :
-    ?notional:float ->
-    ?update_source:Update_source.t ->
     ?update_time:Timestamp.t ->
     symbol:Symbol.Enum_or_string.t ->
+    ?pnl:float ->
+    ?position:float ->
+    ?spot:float ->
+    ?pnl_spot:float ->
+    ?notional:float ->
+    ?avg_buy_price:float ->
+    ?avg_sell_price:float ->
+    ?avg_price:float ->
+    ?update_source:Update_source.t ->
+    ?total_buy_qty:float ->
+    ?total_sell_qty:float ->
+    ?price:Price.Option.t ->
+    ?side:Side.Option.t ->
+    ?qty:Decimal_number.Option.t ->
+    ?package_price:Price.Option.t ->
+    ?buy_notional:float ->
+    ?sell_notional:float ->
+    ?total_original:float ->
+    ?total_executed:float ->
+    ?total_remaining:float ->
+    ?cost_basis:float ->
+    ?running_price:float ->
+    ?running_qty:float ->
     unit ->
     t
 
@@ -129,6 +150,16 @@ module Entry : sig
     (module Cfg.S) ->
     Order_events.response Pipe.Reader.t ->
     t Pipe.Reader.t Symbol.Enum_or_string.Map.t Deferred.t
+
+  val from_balances :
+    ?notional_currency:Currency.t ->
+    V1.Balances.balance list ->
+    t Symbol.Enum_or_string.Map.t
+  (* [from_balances ?notional_currency response] creates initial ledger entries
+     from the Gemini Balances API response. For each non-zero balance, it creates
+     an entry with the current position. The notional_currency parameter (default
+     `Usd) determines which trading pair to use (e.g., BTCUSD, ETHBTC). Only creates
+     entries for currencies that have corresponding trading pairs. *)
 end
 
 type t = Entry.t Symbol.Enum_or_string.Map.t [@@deriving sexp, compare, equal]

@@ -91,7 +91,7 @@ module type CHANNEL_CLIENT_NO_REQUEST = sig
     unit ->
     [ `Ok of response | Error.t ] Pipe.Reader.t Deferred.t
 end
-
+ 
 module type CHANNEL_CLIENT = sig
   include CHANNEL_CLIENT_BASE
 

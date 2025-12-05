@@ -95,12 +95,13 @@ module T = struct
 
   module Reject_reason = struct
     module T = struct
-      type t = [ `Invalid_quantity | `Insufficient_funds ]
+      type t = [ `Invalid_quantity | `Insufficient_funds | `SelfCrossPrevented ]
       [@@deriving sexp, enumerate, compare, equal]
 
       let to_string = function
         | `Invalid_quantity -> "InvalidQuantity"
         | `Insufficient_funds -> "InsufficientFunds"
+        | `SelfCrossPrevented -> "SelfCrossPrevented"
 
     end
 
@@ -111,11 +112,12 @@ module T = struct
 
   module Liquidity = struct
     module T = struct
-      type t = [ `Taker ] [@@deriving sexp, enumerate, compare, equal]
+      type t = [ `Maker | `Taker] [@@deriving sexp, enumerate, compare, equal]
 
       (* TODO determine other liquidities *)
       let to_string = function
         | `Taker -> "Taker"
+        | `Maker -> "Maker"
     end
 
     include T

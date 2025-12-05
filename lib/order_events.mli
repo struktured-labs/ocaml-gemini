@@ -62,17 +62,17 @@ module Reason : sig
   include Json.ENUM_STRING with type t := t
 end
 
-module Reject_reason : sig
-  type t = [ `Invalid_quantity | `Insufficient_funds ] [@@deriving sexp, enumerate]
+  module Reject_reason : sig
+    type t = [ `Invalid_quantity | `Insufficient_funds | `SelfCrossPrevented ] [@@deriving sexp, enumerate]
 
   include Json.ENUM_STRING with type t := t
 end
 
 (** Represents different liquidity types *)
 module Liquidity : sig
-  (** [Taker] is the only known liquidity type but this is poorly documented so
+  (** [Taker] and [Maker] are the known liquidity types but this is poorly documented so
       other values might exist. *)
-  type t = [ `Taker ] [@@deriving sexp, enumerate]
+  type t = [ `Taker | `Maker] [@@deriving sexp, enumerate]
 
   include Json.ENUM_STRING with type t := t
 end
