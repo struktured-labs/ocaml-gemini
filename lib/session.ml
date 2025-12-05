@@ -287,14 +287,14 @@ module Make (C : Cfg.S) = struct
     let csv_row = to_state_csv t in
     (* Check if file exists to determine if we need to write header *)
     Sys.file_exists path >>= fun exists ->
-    let file_exists = match exists with `Yes -> true | _ -> false in
     Writer.with_file path ~append:true ~f:(fun writer ->
-        ( if not file_exists then
-            (* Write CSV header using generated function *)
-            Writer.write_line writer (String.concat ~sep:"," State_csv.csv_header) );
-        (* Write CSV row using generated function *)
+        (match exists with
+        | `Yes -> Deferred.unit
+        | `No | `Unknown ->
+            Writer.write_line writer (String.concat ~sep:"," State_csv.csv_header);
+            Deferred.unit) >>= fun () ->
         Writer.write_line writer (String.concat ~sep:"," (State_csv.row_of_t csv_row));
-        Deferred.unit )
+        Deferred.unit)
 
   let generate_session_id () =
     (* Generate a unique session ID using timestamp and random component *)
