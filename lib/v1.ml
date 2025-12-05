@@ -47,14 +47,14 @@ module T = struct
       type t =
         [ `Maker_or_cancel
         | `Immediate_or_cancel
-        | `Auction_only
+        | `Fill_or_kill
         ]
       [@@deriving sexp, enumerate, compare, equal]
 
       let to_string = function
-        | `Maker_or_cancel -> "maker_or_cancel"
-        | `Immediate_or_cancel -> "immediate_or_cancel"
-        | `Auction_only -> "auction_only"
+        | `Maker_or_cancel -> "maker-or-cancel"
+        | `Immediate_or_cancel -> "immediate-or-cancel"
+        | `Fill_or_kill -> "fill-or-kill"
     end
 
     include T

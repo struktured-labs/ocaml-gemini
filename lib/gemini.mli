@@ -61,12 +61,12 @@ module V1 : sig
   (** Represents different execution rules for an order. *)
   module Order_execution_option : sig
     (** The type of an order execution rule. *)
-    type t =
-      [ `Auction_only
+    type t = [
       | `Immediate_or_cancel
       | `Maker_or_cancel
+      | `Fill_or_kill
       ]
-    [@@deriving sexp]
+    [@@deriving sexp, enumerate, compare, equal]
 
     include Json.S with type t := t
   end
