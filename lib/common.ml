@@ -220,6 +220,7 @@ module Currency = struct
       | `Bch
       | `Ltc
       | `Luna
+      | `Xrp
       | `Xtz
       | `Ust
       | `Link
@@ -292,6 +293,7 @@ module Symbol = struct
       | `Bcheth
       | `Lunausd
       | `Xtzusd
+      | `Xrpusd
       | `Linkusd
       | `Aaveusd
       | `Crvusd
@@ -316,6 +318,7 @@ module Symbol = struct
       | `Rndrusd
       | `Chillguyusd
       | `Elonusd
+      | `Trumpusd
       ]
     [@@deriving sexp, enumerate, equal, compare]
   end

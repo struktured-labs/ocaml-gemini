@@ -39,6 +39,21 @@ let balance_pipe cfg nonce =
       Balances.post cfg nonce request >>| fun response -> (response, epoch + 1) )
 
 module Events = struct
+  (** Auto-restarting pipe wrapper that reconnects on EOF *)
+  let auto_restart_pipe ~name ~create_pipe () =
+    let reader, writer = Pipe.create () in
+    let rec restart_loop () =
+      Log.Global.info "auto_restart_pipe[%s]: connecting..." name;
+      create_pipe () >>= fun source_pipe ->
+      Log.Global.info "auto_restart_pipe[%s]: connected, relaying" name;
+      Pipe.transfer source_pipe writer ~f:Fn.id >>= fun () ->
+      Log.Global.info "auto_restart_pipe[%s]: EOF detected, restarting in 1s" name;
+      after (Time_float_unix.Span.of_sec 1.0) >>= fun () ->
+      restart_loop ()
+    in
+    don't_wait_for (restart_loop ());
+    reader
+
   type t =
     { balance :
         [ `Ok of Balances.response | Rest.Error.post ] Inf_pipe.Reader.t;
@@ -89,48 +104,49 @@ module Events = struct
 
     Log.Global.debug "Events.create: wiring market_data for %d symbols"
       symbols_len;
-    Deferred.List.map symbols ~how:`Sequential ~f:(fun symbol ->
-        Log.Global.info "Events.create: Market_data.client %s"
-          (Symbol.to_string symbol);
-        Market_data.client cfg ?query:None ~uri_args:symbol () >>= fun pipe ->
-        Log.Global.debug "Events.create: Market_data.client ready for %s"
-          (Symbol.to_string symbol);
-        let pipe =
-          Pipe.filter_map pipe ~f:(function
+    let market_data =
+      Symbol.Map.of_alist_exn (List.map symbols ~f:(fun symbol ->
+        let market_data_name = sprintf "market_data[%s]" (Symbol.to_string symbol) in
+        let market_data_pipe = auto_restart_pipe ~name:market_data_name ~create_pipe:(fun () ->
+          Log.Global.info "auto_restart[%s]: connecting Market_data.client" market_data_name;
+          Market_data.client cfg ?query:None ~uri_args:symbol () >>| fun pipe ->
+          let event_pipe = Pipe.filter_map pipe ~f:(function
             | `Ok { Market_data.message = `Update { events; _ }; _ } -> Some events
             | `Ok { message = `Heartbeat _; _ } -> None
             | #Market_data.Error.t as e ->
               Log.Global.error_s (Market_data.Error.sexp_of_t e);
               None )
-        in
-        Log.Global.debug "Events.create: creating relay pipe for %s"
-          (Symbol.to_string symbol);
-        let reader, writer = Pipe.create () in
-        don't_wait_for
-          ( Pipe.iter pipe ~f:(fun events ->
-                Log.Global.debug "Events.create: relaying %d events for %s"
-                  (Array.length events)
-                  (Symbol.to_string symbol);
-                Pipe.transfer_in writer ~from:(Queue.of_array events) )
-            >>| fun () ->
-            Log.Global.info "Events.create: upstream closed for %s, closing writer"
-              (Symbol.to_string symbol);
-            Pipe.close writer );
-        Log.Global.debug "Events.create: returning Inf_pipe reader for %s"
-          (Symbol.to_string symbol);
-        return (Inf_pipe.Reader.create reader) )
-    >>= fun market_data ->
-    Log.Global.debug "Events.create: market_data readers created";
-    let market_data =
-      Symbol.Map.of_alist_exn (List.zip_exn symbols market_data)
+          in
+          let reader, writer = Pipe.create () in
+          don't_wait_for (
+            Pipe.iter event_pipe ~f:(fun events ->
+              Pipe.transfer_in writer ~from:(Queue.of_array events)
+            ) >>| fun () ->
+            Pipe.close writer
+          );
+          reader
+        ) () in
+        (symbol, Inf_pipe.Reader.create market_data_pipe)
+      ))
     in
+    Log.Global.debug "Events.create: market_data readers created with auto-restart";
     Log.Global.info "Events.create: starting order_books.pipe";
-    Order_book.Books.pipe cfg ~symbols () >>= fun order_books ->
-    Log.Global.info "Events.create: order_books.pipe ready";
+    let order_books =
+      Symbol.Map.of_alist_exn (List.map symbols ~f:(fun symbol ->
+        let book_name = sprintf "order_book[%s]" (Symbol.to_string symbol) in
+        let book_pipe = auto_restart_pipe ~name:book_name ~create_pipe:(fun () ->
+          Order_book.Books.pipe cfg ~symbols:[symbol] () >>| fun books_map ->
+          Map.find_exn books_map symbol
+        ) () in
+        (symbol, book_pipe)
+      ))
+    in
+    Log.Global.info "Events.create: order_books.pipe ready with auto-restart";
     Log.Global.info "Events.create: starting order_events.client";
-    Order_events.client cfg ~nonce ?query:None ?uri_args:None ()
-    >>= fun order_events ->
-    Log.Global.info "Events.create: order_events.client ready";
+    let order_events = auto_restart_pipe ~name:"order_events" ~create_pipe:(fun () ->
+      Order_events.client cfg ~nonce ?query:None ?uri_args:None ()
+    ) () in
+    Log.Global.info "Events.create: order_events.client ready with auto-restart";
     let init = Symbol.Map.of_alist_exn (List.map symbols ~f:(fun symbol -> (symbol, Ledger.Entry.create ~symbol:(Symbol.Enum_or_string.of_enum symbol) ()))) in
     let order_events, order_events_exn =
       Pipe.fork ~pushback_uses:`Fast_consumer_only order_events
@@ -325,7 +341,7 @@ module Make (C : Cfg.S) = struct
       }
     [@@deriving make, sexp]
 
-    let make ?(type_ = `Exchange_limit) ?(options = []) = make_t ~type_ ~options
+    let make ?(type_ = `Exchange_limit) ?(options = [`Immediate_or_cancel]) = make_t ~type_ ~options
 
     let to_api ~client_order_id (t : t) : Order.New.request =
       let { symbol; amount; price; side; type_; options } = t in
