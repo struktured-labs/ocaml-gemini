@@ -341,7 +341,7 @@ module Make (C : Cfg.S) = struct
       }
     [@@deriving make, sexp]
 
-    let make ?(type_ = `Exchange_limit) ?(options = []) = make_t ~type_ ~options
+    let make ?(type_ = `Exchange_limit) ?(options = [`Immediate_or_cancel]) = make_t ~type_ ~options
 
     let to_api ~client_order_id (t : t) : Order.New.request =
       let { symbol; amount; price; side; type_; options } = t in

@@ -126,6 +126,15 @@ module Book = struct
   let best_ask t =
     Map.min_elt t.asks |> Option.value ~default:(0., Price_level.empty) |> snd
 
+  (** Convert notional volume (USD) to base asset quantity using best bid/ask *)
+  let quantity_from_notional_bid t ~notional =
+    let Price_level.{ price = bid_price; _ } = best_bid t in
+    if Float.(bid_price <= 0.) then notional else notional /. bid_price
+
+  let quantity_from_notional_ask t ~notional =
+    let Price_level.{ price = ask_price; _ } = best_ask t in
+    if Float.(ask_price <= 0.) then notional else notional /. ask_price
+
   let bid_market_price t ~volume =
     let normalize Price_level.{ price; volume } =
       Price_level.create ~price:(price /. volume) ~volume
