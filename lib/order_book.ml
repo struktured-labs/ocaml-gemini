@@ -188,6 +188,13 @@ module Book = struct
     | `Sell ->
       ask_market_price t ~volume
 
+  let mid_market_price t ~volume =
+    let bid_level = bid_market_price t ~volume in
+    let ask_level = ask_market_price t ~volume in
+    let price =
+      (bid_level.price +. ask_level.price) /. 2.
+    in
+    Price_level.create ~price ~volume
   let total_bid_volume_at_price_level t ~price =
     let orders, min, max =
       ( t.bids,
