@@ -36,7 +36,9 @@ let trade_pipe cfg nonce symbol =
 let balance_pipe cfg nonce =
   let request = () in
   Inf_pipe.unfold ~init:0 ~f:(fun epoch ->
-      Balances.post cfg nonce request >>| fun response -> (response, epoch + 1) )
+      Balances.post cfg nonce request >>= fun response ->
+      after (Time_float_unix.Span.of_sec 1.0) >>| fun () ->
+      (response, epoch + 1) )
 
 module Events = struct
   (** Auto-restarting pipe wrapper that reconnects on EOF *)
@@ -215,7 +217,8 @@ module Make (C : Cfg.S) = struct
       session_id : string;
       api_nonce : Nonce.reader;
       client_order_id_nonce : Client_order_id.reader;
-      events : Events.t
+      events : Events.t;
+      mutable balances : Balances.response option
     }
 
   (** CSV-serializable state snapshot for persistence *)
@@ -358,7 +361,20 @@ module Make (C : Cfg.S) = struct
     Log.Global.info "Session.create: got client_order_id_nonce";
     Events.create ?symbols ?order_ids (module C) api_nonce >>= fun events ->
     Log.Global.info "Session.create: Events.create finished";
-    let t = { name; session_id; events; api_nonce; client_order_id_nonce } in
+    (* Fork the balance pipe for caching and external use *)
+    let balance_reader_1, balance_reader_2 = Inf_pipe.fork ~pushback_uses:`Fast_consumer_only events.balance in
+    let t = { name; session_id; events = {events with balance = balance_reader_1}; api_nonce; client_order_id_nonce; balances = None } in
+    (* Start background task to update balances cache from pipe *)
+    don't_wait_for (
+      let rec loop () =
+        Inf_pipe.read balance_reader_2 >>= function
+        | `Ok balances -> 
+            t.balances <- Some balances;
+            loop ()
+        | _ -> loop ()
+      in
+      loop ()
+    );
     (* Write initial state - include session_id in filename if not explicitly provided *)
     let state_csv_path = 
       match state_csv_path with
@@ -367,7 +383,7 @@ module Make (C : Cfg.S) = struct
     in
     write_state_csv ~path:state_csv_path t >>| fun () ->
     Log.Global.info "Session.create: wrote initial state to %s" state_csv_path;
-    t
+    t 
 
   module New_order_request = struct
     type t =
@@ -434,6 +450,8 @@ module Make (C : Cfg.S) = struct
       Concurrent_order_map.clear t.events.order_status;
       `Ok response
     | #Error.post as e -> e
+
+  let get_balances (t : t) : Balances.response option = t.balances
 end
 
 module Prod_session () = Make (Cfg.Production ())
