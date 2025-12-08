@@ -382,11 +382,12 @@ module Ledger (*: S *) = struct
     update_from_books t ~books:(Order_book.Books.(set_book empty) book)
 
   let on_trade' ?update_source ?timestamp ?(avg_trade_price : float option)
-      (t : t) ~symbol ~(price : float) ~(side : Side.t) ~(qty : float) : t =
+      ?(fee_usd : float = 0.) (t : t) ~symbol ~(price : float)
+      ~(side : Side.t) ~(qty : float) : t =
     Map.update t symbol ~f:(fun t ->
         let t = Option.value_or_thunk t ~default:(Entry.create ~symbol) in
-        Entry.on_trade ?update_source ?timestamp ?avg_trade_price ~qty ~price
-          ~side t )
+        Entry.on_trade ?update_source ?timestamp ?avg_trade_price ~fee_usd ~qty
+          ~price ~side t )
 
   let on_order_events (t : t) (events : Order_events.Order_event.t list) =
     let events =
