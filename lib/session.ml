@@ -266,14 +266,22 @@ module Make (C : Cfg.S) = struct
         formatted_price
 
   (* Format a quantity with the correct precision based on quote_increment *)
-  let format_quantity t symbol quantity =
+  let format_quantity ?(side=`Buy) t symbol quantity =
     match symbol_details t symbol with
     | None ->
         Log.Global.error "No symbol details for %s, using default precision" (Symbol.to_string symbol);
         Float.to_string quantity
     | Some details ->
         let decimal_places = calc_decimal_places_from details.tick_size in
-        let formatted = sprintf "%.*f" decimal_places quantity in
+        let formatted = match side with 
+        | `Buy ->
+          sprintf "%.*f" decimal_places quantity
+        | `Sell ->
+          (* For sell orders, round down to avoid exceeding available balance *)
+          let factor = 10.0 **. (Float.of_int decimal_places) in
+          let qty_rounded = Float.round_down (quantity *. factor) /. factor in
+          sprintf "%.*f" decimal_places qty_rounded
+        in
         Log.Global.debug "Formatting quantity %.9f for %s with %d decimal places as %s" quantity (Symbol.to_string symbol) decimal_places formatted;
         formatted
         
@@ -388,13 +396,13 @@ module Make (C : Cfg.S) = struct
     let req = match autoformat with
     | `All ->
         let formatted_price = format_price t req.symbol (Float.of_string req.price) in
-        let formatted_quantity = format_quantity t req.symbol (Float.of_string req.amount) in
+        let formatted_quantity = format_quantity ~side:req.side t req.symbol (Float.of_string req.amount) in
         {req with price = formatted_price; amount = formatted_quantity}      
     | `Price ->
         let formatted_price = format_price t req.symbol (Float.of_string req.price) in
         {req with price = formatted_price}
     | `Quantity -> 
-        let formatted_quantity = format_quantity t req.symbol (Float.of_string req.amount) in
+        let formatted_quantity = format_quantity ~side:req.side t req.symbol (Float.of_string req.amount) in
         {req with amount = formatted_quantity}
     | `None -> req in
     Inf_pipe.read t.client_order_id_nonce >>= fun client_order_id ->

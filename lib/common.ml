@@ -412,15 +412,10 @@ end
         | `Maker_or_cancel -> "maker-or-cancel"
         | `Immediate_or_cancel -> "immediate-or-cancel"
         | `Fill_or_kill -> "fill-or-kill"
-
-      let of_string = function
-        | "maker-or-cancel" -> `Maker_or_cancel
-        | "immediate-or-cancel" -> `Immediate_or_cancel
-        | "fill-or-kill" -> `Fill_or_kill
-        | s -> failwith (Printf.sprintf "Unknown order execution option: %s" s)
     end
 
     include T
+    include (Json.Make (T) : Json.S with type t := t)
   end
 
   module Order_execution_option_list = Csv_support.List.Make_default(Order_execution_option)
@@ -435,16 +430,10 @@ module Reject_reason = struct
       | `Insufficient_funds -> "InsufficientFunds"
       | `Self_cross_prevented -> "SelfCrossPrevented"
       | `Immediate_or_cancel_would_post -> "ImmediateOrCancelWouldPost"
-
-    let of_string = function
-      | "InvalidQuantity" -> `Invalid_quantity
-      | "InsufficientFunds" -> `Insufficient_funds
-      | "SelfCrossPrevented" -> `Self_cross_prevented
-      | "ImmediateOrCancelWouldPost" -> `Immediate_or_cancel_would_post
-      | s -> failwith (Printf.sprintf "Unknown reject reason: %s" s)
   end
 
   include T
+  include (Json.Make (T) : Json.S with type t := t)
 end
   
 (** The protocol version. *)
