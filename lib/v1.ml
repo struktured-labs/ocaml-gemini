@@ -18,6 +18,9 @@ module T = struct
   module Currency = Currency
   module Symbol = Symbol
   module Order_type = Order_type
+  module Order_execution_option = Common.Order_execution_option
+  module Order_execution_option_list = Common.Order_execution_option_list
+  module Reject_reason = Common.Reject_reason
 
   module Heartbeat = struct
     module T = struct
@@ -40,26 +43,6 @@ module T = struct
 
     include T
     include Rest.Make_no_arg (T)
-  end
-
-  module Order_execution_option = struct
-    module T = struct
-      type t =
-        [ `Maker_or_cancel
-        | `Immediate_or_cancel
-        | `Fill_or_kill
-        ]
-      [@@deriving sexp, enumerate, compare, equal]
-
-      let to_string = function
-        | `Maker_or_cancel -> "maker-or-cancel"
-        | `Immediate_or_cancel -> "immediate-or-cancel"
-        | `Fill_or_kill -> "fill-or-kill"
-    end
-
-    include T
-
-    include (Json.Make (T) : Json.S with type t := t)
   end
 
   module Order = struct
@@ -99,9 +82,10 @@ module T = struct
             was_forced : bool;
             executed_amount : Decimal_string.t;
             remaining_amount : Decimal_string.t;
-            options : Order_execution_option.t list;
+            options : Order_execution_option.t list; [@default []]
             price : Decimal_string.t;
-            original_amount : Decimal_string.t
+            original_amount : Decimal_string.t;
+            reason : Reject_reason.t option; [@default None]
           }
         [@@deriving yojson, sexp]
       end

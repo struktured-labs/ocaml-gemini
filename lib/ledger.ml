@@ -198,28 +198,27 @@ module T = struct
         | `Order_book book -> let t = update_from_book t book in ((t, order_tracker), t)
         | `Order_event event -> (
           let order_tracker = Order_tracker.on_order_event order_tracker event in 
-          match event with
-          | { symbol = _;
-              side;
-              timestamp = _;
-              timestampms;
-              executed_amount;
-              price;
-              _
-            } ->
-            let summary = Order_tracker.summary order_tracker in
-            let t =
-              match Option.both executed_amount price with
-              | None -> 
-                Log.Global.info "Missing executed_amount or price in order event"; t
-              | Some (executed_amount, price) ->
-                let price = Float.of_string price in
-                let qty = Float.of_string executed_amount in
-                let timestamp = timestampms in
+          match event.fill with
+          | Some (Order_events.Fill.{amount; price; _}) ->
+              let summary = Order_tracker.summary order_tracker in
+              let timestamp = event.timestampms in
+              let qty = Float.of_string amount in
+              let price = Float.of_string price in
+              let side = event.side in
+              let t =
                 on_trade t ~timestamp ~side ~price ~qty
-               |> fun t -> on_summary t summary
-            in 
-            ((t, order_tracker), t) ) )
+                |> fun t -> on_summary t summary
+              in
+              ((t, order_tracker), t)            
+          | None -> 
+            (let summary = Order_tracker.summary order_tracker in
+              on_summary t summary |> fun t ->
+            ((t, order_tracker), t) ))
+      )
+
+      
+
+      
   let _pipe ?notional ?update_time ?update_source ~symbol = 
     pipe ~init:(create ~symbol ?notional ?update_time ?update_source ())
 

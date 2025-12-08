@@ -368,7 +368,7 @@ module Make (C : Cfg.S) = struct
         price : string;
         side : Side.t;
         type_ : Order_type.t;
-        options : Order_execution_option.t list
+        options : Common.Order_execution_option.t list
       }
     [@@deriving make, sexp]
 

@@ -58,6 +58,7 @@ module V1 : sig
 
   module Order_type : module type of Order_type
 
+  
   (** Represents different execution rules for an order. *)
   module Order_execution_option : sig
     (** The type of an order execution rule. *)
@@ -66,9 +67,30 @@ module V1 : sig
       | `Maker_or_cancel
       | `Fill_or_kill
       ]
-    [@@deriving sexp, enumerate, compare, equal]
+    [@@deriving sexp, yojson, enumerate, compare, equal]
 
-    include Json.S with type t := t
+    val to_string : t -> string
+    val of_string : string -> t
+  end
+
+  module Order_execution_option_list : sig
+    type t
+    [@@deriving sexp, yojson, compare, equal]
+  end
+
+  (** Represents reasons why an order might be rejected. *)
+  module Reject_reason : sig
+    (** The type of a reject reason. *)
+    type t = [
+      | `Invalid_quantity
+      | `Insufficient_funds
+      | `Self_cross_prevented
+      | `Immediate_or_cancel_would_post
+    ]
+    [@@deriving sexp, yojson, enumerate, compare, equal]
+
+    val to_string : t -> string
+    val of_string : string -> t
   end
 
   (** Represents an order on the Gemini trading exchange over the REST api. *)
@@ -101,7 +123,8 @@ module V1 : sig
           remaining_amount : Decimal_string.t;
           options : Order_execution_option.t list;
           price : Decimal_string.t;
-          original_amount : Decimal_string.t
+          original_amount : Decimal_string.t;
+          reason : Reject_reason.t option
         }
       [@@deriving sexp]
 

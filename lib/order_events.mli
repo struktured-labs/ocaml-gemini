@@ -96,6 +96,28 @@ module Api_session : sig
   type t = string [@@deriving sexp, yojson]
 end
 
+(** Optional fill for CSV support *)
+module Fill_option : sig
+  type t = Fill.t option [@@deriving sexp, yojson, compare, equal]
+end
+
+(** Optional reject reason for CSV support *)
+module Reject_reason_option : sig
+  type t = Reject_reason.t option
+end
+
+(** List of order event types for CSV support *)
+module Event_type_list : sig
+  type t = Order_event_type.t list
+end
+
+(** List of symbols for CSV support *)
+module Symbol_list : sig
+  type t = Symbol.t list
+end
+
+
+
 module Order_event : sig
   (** The type of an order event. *)
   type t =
@@ -110,6 +132,7 @@ module Order_event : sig
       side : Side.t;
       behavior : string option; [@default None]
       type_ : Order_event_type.t; [@key "type"]
+      options : Common.Order_execution_option.t list; [@default []]
       timestamp : Timestamp.t;
       timestampms : Timestamp.Ms.t;
       is_live : bool;
