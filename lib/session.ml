@@ -368,7 +368,9 @@ module Make (C : Cfg.S) = struct
     don't_wait_for (
       let rec loop () =
         Inf_pipe.read balance_reader_2 >>= function
-        | `Ok balances -> 
+        | `Ok balances ->
+            Log.Global.info "Session.create[%s]: balance update %s" session_id
+              (Balances.sexp_of_response balances |> Sexp.to_string_hum);
             t.balances <- Some balances;
             loop ()
         | _ -> loop ()
@@ -409,6 +411,8 @@ module Make (C : Cfg.S) = struct
 
   let submit_order ?(autoformat=`All) t (req : New_order_request.t) :
       [ `Ok of Order.New.response * status_pipe | Error.post ] Deferred.t =
+    Log.Global.info "submit_order[%s]: requested %s" t.session_id
+      (New_order_request.sexp_of_t req |> Sexp.to_string_hum);
     let req = match autoformat with
     | `All ->
         let formatted_price = format_price t req.symbol (Float.of_string req.price) in
@@ -421,11 +425,17 @@ module Make (C : Cfg.S) = struct
         let formatted_quantity = format_quantity ~side:req.side t req.symbol (Float.of_string req.amount) in
         {req with amount = formatted_quantity}
     | `None -> req in
+    Log.Global.info "submit_order[%s]: formatted %s" t.session_id
+      (New_order_request.sexp_of_t req |> Sexp.to_string_hum);
     Inf_pipe.read t.client_order_id_nonce >>= fun client_order_id ->
+    Log.Global.info "submit_order[%s]: client_order_id=%s" t.session_id
+      client_order_id;
     let req = New_order_request.to_api ~client_order_id req in
     Order.New.post (cfg t) t.api_nonce req >>| function
     | `Ok response ->
       let order_id = response.order_id in
+      Log.Global.info "submit_order[%s]: accepted order_id=%Ld" t.session_id
+        order_id;
       let status_pipe : _ Inf_pipe.Reader.t =
         status_pipe (cfg t) t.api_nonce order_id
       in
@@ -435,21 +445,36 @@ module Make (C : Cfg.S) = struct
       Concurrent_order_map.set ~key:order_id ~data:status_pipe
         t.events.order_status;
       `Ok (response, status_pipe')
-    | #Error.post as e -> e
+    | #Error.post as e ->
+      Log.Global.error "submit_order[%s]: error %s" t.session_id
+        (Error.sexp_of_post e |> Sexp.to_string_hum);
+      e
 
   let cancel_order t req =
+    Log.Global.info "cancel_order[%s]: order_id=%Ld" t.session_id
+      req.Order.Cancel.By_order_id.order_id;
     Order.Cancel.By_order_id.post (cfg t) t.api_nonce req >>| function
     | `Ok response ->
+      Log.Global.info "cancel_order[%s]: ok order_id=%Ld" t.session_id
+        response.order_id;
       Concurrent_order_map.remove t.events.order_status response.order_id;
       `Ok response
-    | #Error.post as e -> e
+    | #Error.post as e ->
+      Log.Global.error "cancel_order[%s]: error %s" t.session_id
+        (Error.sexp_of_post e |> Sexp.to_string_hum);
+      e
 
   let cancel_all (t : t) =
+    Log.Global.info "cancel_all[%s]: issuing" t.session_id;
     Order.Cancel.All.post (cfg t) t.api_nonce () >>| function
     | `Ok response ->
+      Log.Global.info "cancel_all[%s]: ok" t.session_id;
       Concurrent_order_map.clear t.events.order_status;
       `Ok response
-    | #Error.post as e -> e
+    | #Error.post as e ->
+      Log.Global.error "cancel_all[%s]: error %s" t.session_id
+        (Error.sexp_of_post e |> Sexp.to_string_hum);
+      e
 
   let get_balances (t : t) : Balances.response option = t.balances
 end
