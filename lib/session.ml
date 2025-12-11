@@ -6,6 +6,7 @@ module Order_id = Int64
 module Order_map = Map.Make (Order_id)
 module Error = Rest.Error
 module Concurrent_order_map = Concurrent_map.Make (Int64)
+module Concurrent_string_map = Concurrent_map.Make (String)
 
 module Client_order_id = struct
   include Nonce.File
@@ -218,7 +219,7 @@ module Make (C : Cfg.S) = struct
       api_nonce : Nonce.reader;
       client_order_id_nonce : Client_order_id.reader;
       events : Events.t;
-      mutable balances : Balances.response option
+      balances : Balances.response option Mvar.Read_write.t
     }
 
   (** CSV-serializable state snapshot for persistence *)
@@ -295,11 +296,12 @@ module Make (C : Cfg.S) = struct
     }
 
   (* Cache writers per path to avoid reopening the CSV file on every write. *)
-  let writer_cache : (string, Writer.t * bool ref) Hashtbl.t =
-    Hashtbl.create (module String)
+  let writer_cache : (Writer.t * bool ref) Concurrent_string_map.t =
+    Concurrent_string_map.empty ()
 
   let close_all_writers () =
-    Hashtbl.iter writer_cache ~f:(fun (w, _) -> don't_wait_for (Writer.close w))
+    let cache_data = Concurrent_string_map.data writer_cache in
+    List.iter cache_data ~f:(fun (w, _) -> don't_wait_for (Writer.close w))
 
   let () =
     Shutdown.at_shutdown (fun () ->
@@ -317,13 +319,13 @@ module Make (C : Cfg.S) = struct
         | _ -> true )
 
   let get_writer path header : (Writer.t * bool ref) Deferred.t =
-    match Hashtbl.find writer_cache path with
+    match Concurrent_string_map.find writer_cache path with
     | Some entry -> return entry
     | None ->
         Sys.file_exists path >>= fun exists ->
         Writer.open_file ~append:true path >>= fun w ->
         let header_written = ref (not (header_needed path exists)) in
-        Hashtbl.set writer_cache ~key:path ~data:(w, header_written);
+        Concurrent_string_map.set writer_cache ~key:path ~data:(w, header_written);
         ( if not !header_written then (
             Writer.write_line w header;
             header_written := true;
@@ -363,7 +365,9 @@ module Make (C : Cfg.S) = struct
     Log.Global.info "Session.create: Events.create finished";
     (* Fork the balance pipe for caching and external use *)
     let balance_reader_1, balance_reader_2 = Inf_pipe.fork ~pushback_uses:`Fast_consumer_only events.balance in
-    let t = { name; session_id; events = {events with balance = balance_reader_1}; api_nonce; client_order_id_nonce; balances = None } in
+    let balances_mvar = Mvar.create () in
+    Mvar.set balances_mvar None;
+    let t = { name; session_id; events = {events with balance = balance_reader_1}; api_nonce; client_order_id_nonce; balances = balances_mvar } in
     (* Start background task to update balances cache from pipe *)
     don't_wait_for (
       let rec loop () =
@@ -371,7 +375,7 @@ module Make (C : Cfg.S) = struct
         | `Ok balances ->
             Log.Global.info "Session.create[%s]: balance update %s" session_id
               (Balances.sexp_of_response balances |> Sexp.to_string_hum);
-            t.balances <- Some balances;
+            Mvar.set t.balances (Some balances);
             loop ()
         | _ -> loop ()
       in
@@ -476,7 +480,8 @@ module Make (C : Cfg.S) = struct
         (Error.sexp_of_post e |> Sexp.to_string_hum);
       e
 
-  let get_balances (t : t) : Balances.response option = t.balances
+  let get_balances (t : t) : Balances.response option = 
+    Option.bind (Mvar.peek t.balances) ~f:Fn.id
 end
 
 module Prod_session () = Make (Cfg.Production ())
