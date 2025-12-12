@@ -481,7 +481,7 @@ module Make (C : Cfg.S) = struct
       e
 
   let get_balances (t : t) : Balances.response option = 
-    Option.bind (Mvar.peek t.balances) ~f:Fn.id
+    Mvar.peek t.balances |> Option.bind ~f:Fn.id
 end
 
 module Prod_session () = Make (Cfg.Production ())
