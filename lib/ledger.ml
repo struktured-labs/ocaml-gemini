@@ -214,11 +214,12 @@ module T = struct
                     Symbol.enum_or_string_to_currency event.symbol ~side:`Sell
                   in
                   let fee_usd =
-                    if Currency.Enum_or_string.equal fee_currency quote_currency
-                    then fee_amount
-                    else if Currency.Enum_or_string.equal fee_currency base_currency
-                    then fee_amount *. Float.of_string price
-                    else 0.
+                    match Currency.Enum_or_string.equal fee_currency quote_currency with
+                    | true -> fee_amount
+                    | false ->
+                      (match Currency.Enum_or_string.equal fee_currency base_currency with
+                      | true -> fee_amount *. Float.of_string price
+                      | false -> 0.)
                   in
                   Some fee_usd
                 with _ -> None )
