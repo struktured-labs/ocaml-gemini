@@ -14,6 +14,8 @@ module Error : sig
     | `Service_unavailable of string
     | `Not_acceptable of string
     | `Unauthorized of string
+    | `Internal_server_error of string
+    | `Unexpected of string * Cohttp.Code.status_code
     ]
   [@@deriving sexp]
 
