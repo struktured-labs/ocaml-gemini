@@ -249,11 +249,9 @@ module Get = struct
       | `Bad_request -> Cohttp_async.Body.to_string body >>| fun b -> `Bad_request b
       | `Service_unavailable -> Cohttp_async.Body.to_string body >>| fun b -> `Service_unavailable b
       | `Unauthorized -> Cohttp_async.Body.to_string body >>| fun b -> `Unauthorized b
+      | `Internal_server_error -> Cohttp_async.Body.to_string body >>| fun b -> `Internal_server_error b
       | (code : Cohttp.Code.status_code) ->
-        Cohttp_async.Body.to_string body >>| fun b ->
-        failwiths ~here:[%here]
-          (sprintf "unexpected status code (body=%S)" b)
-          code Cohttp.Code.sexp_of_status_code
+        Cohttp_async.Body.to_string body >>| fun b -> `Unexpected (b, code)
 
     let command =
       let open Command.Let_syntax in
