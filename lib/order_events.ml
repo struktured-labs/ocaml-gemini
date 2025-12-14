@@ -93,23 +93,7 @@ module T = struct
     include (Json.Make (T) : Json.S with type t := t)
   end
 
-  module Reject_reason = struct
-    module T = struct
-      type t = [ `Invalid_quantity | `Insufficient_funds | `Self_cross_prevented | `Immediate_or_cancel_would_post ]
-      [@@deriving sexp, enumerate, compare, equal]
-
-      let to_string = function
-        | `Invalid_quantity -> "InvalidQuantity"
-        | `Insufficient_funds -> "InsufficientFunds"
-        | `Self_cross_prevented -> "SelfCrossPrevented"
-        | `Immediate_or_cancel_would_post -> "ImmediateOrCancelWouldPost"
-
-    end
-
-    include T
-
-    include (Json.Make (T) : Json.S with type t := t)
-  end
+  module Reject_reason = Common.Reject_reason
 
   module Liquidity = struct
     module T = struct
@@ -169,6 +153,8 @@ module T = struct
 
   module Reject_reason_option = Csv_support.Optional.Make_default (Reject_reason)
 
+  module Order_execution_option_list = Common.Order_execution_option_list
+  
   module Order_event = struct
     open Csv_support
 
@@ -184,11 +170,12 @@ module T = struct
         side : Side.t;
         behavior : Optional.String.t; [@default None] (* TODO make enum *)
         type_ : Order_event_type.t; [@key "type"]
+        options: Order_execution_option_list.t; [@default []]
         timestamp : Timestamp.t;
         timestampms : Timestamp.Ms.t;
         is_live : bool;
         is_cancelled : bool;
-        is_hidden : bool;
+        is_hidden : bool;        
         avg_execution_price : Decimal_string_option.t; [@default None]
         executed_amount : Decimal_string_option.t; [@default None]
         remaining_amount : Decimal_string_option.t; [@default None]

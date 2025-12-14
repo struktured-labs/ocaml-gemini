@@ -5,6 +5,8 @@ module Error = struct
     | `Service_unavailable of string
     | `Not_acceptable of string
     | `Unauthorized of string
+    | `Internal_server_error of string
+    | `Unexpected of string * Cohttp.Code.status_code
     ]
   [@@deriving sexp]
 
@@ -133,24 +135,25 @@ end = struct
     Cohttp_async.Client.post ~headers ?chunked:None ?interrupt:None
       ?ssl_config:None ?body:None uri
     >>= fun (response, body) ->
-    match Cohttp.Response.status response with
+    let status = Cohttp.Response.status response in
+    match status with
     | `OK ->
-      Cohttp_async.Body.to_string body >>| fun s ->
-      Log.Global.debug "result as json:\n %s" s;
-      let yojson = Yojson.Safe.from_string s in
-      Response.parse yojson Operation.response_of_yojson
+        Cohttp_async.Body.to_string body >>| fun s ->
+        Log.Global.debug "result as json:\n %s" s;
+        let yojson = Yojson.Safe.from_string s in
+        Response.parse yojson Operation.response_of_yojson
     | `Not_found -> return `Not_found
     | `Not_acceptable ->
-      Cohttp_async.Body.to_string body >>| fun body -> `Not_acceptable body
+        Cohttp_async.Body.to_string body >>| fun body -> `Not_acceptable body
     | `Bad_request ->
-      Cohttp_async.Body.to_string body >>| fun body -> `Bad_request body
+        Cohttp_async.Body.to_string body >>| fun body -> `Bad_request body
     | `Service_unavailable ->
       Cohttp_async.Body.to_string body >>| fun body -> `Service_unavailable body
+    | `Internal_server_error ->
+      Cohttp_async.Body.to_string body >>| fun body -> `Internal_server_error body
     | (code : Cohttp.Code.status_code) ->
-      Cohttp_async.Body.to_string body >>| fun body ->
-      failwiths ~here:[%here]
-        (sprintf "unexpected status code (body=%S)" body)
-        code Cohttp.Code.sexp_of_status_code
+      (* Catch-all: preserve both body and status code for diagnostics. *)
+      Cohttp_async.Body.to_string body >>| fun body -> `Unexpected (body, code)
 end
 
 module Make (Operation : Operation.S) = struct
@@ -246,11 +249,9 @@ module Get = struct
       | `Bad_request -> Cohttp_async.Body.to_string body >>| fun b -> `Bad_request b
       | `Service_unavailable -> Cohttp_async.Body.to_string body >>| fun b -> `Service_unavailable b
       | `Unauthorized -> Cohttp_async.Body.to_string body >>| fun b -> `Unauthorized b
+      | `Internal_server_error -> Cohttp_async.Body.to_string body >>| fun b -> `Internal_server_error b
       | (code : Cohttp.Code.status_code) ->
-        Cohttp_async.Body.to_string body >>| fun b ->
-        failwiths ~here:[%here]
-          (sprintf "unexpected status code (body=%S)" b)
-          code Cohttp.Code.sexp_of_status_code
+        Cohttp_async.Body.to_string body >>| fun b -> `Unexpected (b, code)
 
     let command =
       let open Command.Let_syntax in

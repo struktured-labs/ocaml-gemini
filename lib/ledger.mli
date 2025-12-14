@@ -101,6 +101,7 @@ module Entry : sig
     ?update_source:Update_source.t ->
     ?timestamp:Timestamp.t ->
     ?avg_trade_price:float ->
+    ?fee_usd:float ->
     t ->
     price:float ->
     side:Side.t ->
@@ -172,6 +173,7 @@ val on_trade' :
   ?update_source:Update_source.t ->
   ?timestamp:Timestamp.t ->
   ?avg_trade_price:float ->
+  ?fee_usd:float ->
   t ->
   symbol:Symbol.Enum_or_string.t ->
   price:Price.t ->

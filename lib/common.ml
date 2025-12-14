@@ -381,12 +381,16 @@ module Order_type = struct
       [ `Exchange_limit
       | `Stop_limit
       | `Unspecified
+      | `Market_sell
+      | `Market_buy
       ]
     [@@deriving sexp, enumerate, equal, compare]
 
     let to_string = function
       | `Exchange_limit -> "exchange limit"
-      | `Stop_limit -> "stop-limit"
+      | `Stop_limit -> "stop limit"
+      | `Market_buy -> "market buy"
+      | `Market_sell -> "market sell"
       | `Unspecified -> ""
   end
 
@@ -395,5 +399,43 @@ module Order_type = struct
   include (Json.Make (T) : Json.S with type t := t)
 end
 
+ module Order_execution_option = struct
+    module T = struct
+      type t =
+        [ `Maker_or_cancel
+        | `Immediate_or_cancel
+        | `Fill_or_kill
+        ]
+      [@@deriving sexp, yojson, enumerate, compare, equal]
+
+      let to_string = function
+        | `Maker_or_cancel -> "maker-or-cancel"
+        | `Immediate_or_cancel -> "immediate-or-cancel"
+        | `Fill_or_kill -> "fill-or-kill"
+    end
+
+    include T
+    include (Json.Make (T) : Json.S with type t := t)
+  end
+
+  module Order_execution_option_list = Csv_support.List.Make_default(Order_execution_option)
+
+module Reject_reason = struct
+  module T = struct
+    type t = [ `Invalid_quantity | `Insufficient_funds | `Self_cross_prevented | `Immediate_or_cancel_would_post | `Maker_or_cancel_would_take ]
+    [@@deriving sexp, yojson, enumerate, compare, equal]
+
+    let to_string = function
+      | `Invalid_quantity -> "InvalidQuantity"
+      | `Insufficient_funds -> "InsufficientFunds"
+      | `Self_cross_prevented -> "SelfCrossPrevented"
+      | `Immediate_or_cancel_would_post -> "ImmediateOrCancelWouldPost"
+      | `Maker_or_cancel_would_take -> "MakerOrCancelWouldTake"
+  end
+
+  include T
+  include (Json.Make (T) : Json.S with type t := t)
+end
+  
 (** The protocol version. *)
 let v1 = "v1"

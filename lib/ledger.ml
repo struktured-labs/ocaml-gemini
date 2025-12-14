@@ -53,9 +53,10 @@ module T = struct
     make_t ~update_time
     
   let rec on_trade ?(update_source = `Trade) ?timestamp
-      ?(avg_trade_price : float option) t ~(price : float) ~(side : Side.t)
-      ~(qty : float) : t =
-    Log.Global.info "on_trade: price=%f side=%s qty=%f"  price (Side.to_string side) qty;
+      ?(avg_trade_price : float option) ?(fee_usd : float = 0.) t
+      ~(price : float) ~(side : Side.t) ~(qty : float) : t =
+    Log.Global.info "on_trade: price=%f side=%s qty=%f fee_usd=%f" price
+      (Side.to_string side) qty fee_usd;
     let timestamp = Option.value_or_thunk timestamp ~default:Timestamp.now in
     let position_sign =
       match side with
@@ -76,7 +77,8 @@ module T = struct
     | false ->
       let notional_sign : float = position_sign *. -1.0 in
       let package_price = qty *. price in
-      let signed_notional = notional_sign *. package_price in
+      (* Fees reduce cash: apply with negative sign to notional regardless of side. *)
+      let signed_notional = (notional_sign *. package_price) -. fee_usd in
       let notional = signed_notional +. t.notional in
       let total_buy_qty, total_sell_qty =
        match side with 
@@ -91,10 +93,12 @@ module T = struct
         match side with
         | `Buy -> t.buy_notional +. package_price, t.sell_notional
         | `Sell -> t.buy_notional, t.sell_notional +. package_price in
-     let cost_basis = 
+      let cost_basis =
         match side with
-        | `Buy -> t.cost_basis +.  package_price
-        | `Sell -> t.cost_basis -. t.cost_basis *. qty /. t.running_qty in
+        | `Buy -> t.cost_basis +. package_price +. fee_usd
+        | `Sell ->
+          (* Fee on sell reduces proceeds; keep cost basis adjustment as before. *)
+          t.cost_basis -. t.cost_basis *. qty /. t.running_qty in
       let running_qty = 
         match side with
         | `Buy -> t.running_qty +. qty
@@ -197,29 +201,52 @@ module T = struct
         match e with
         | `Order_book book -> let t = update_from_book t book in ((t, order_tracker), t)
         | `Order_event event -> (
-          let order_tracker = Order_tracker.on_order_event order_tracker event in 
-          match event with
-          | { symbol = _;
-              side;
-              timestamp = _;
-              timestampms;
-              executed_amount;
-              price;
-              _
-            } ->
-            let summary = Order_tracker.summary order_tracker in
-            let t =
-              match Option.both executed_amount price with
-              | None -> 
-                Log.Global.info "Missing executed_amount or price in order event"; t
-              | Some (executed_amount, price) ->
-                let price = Float.of_string price in
-                let qty = Float.of_string executed_amount in
-                let timestamp = timestampms in
-                on_trade t ~timestamp ~side ~price ~qty
-               |> fun t -> on_summary t summary
-            in 
-            ((t, order_tracker), t) ) )
+          let order_tracker = Order_tracker.on_order_event order_tracker event in
+          let fee_usd =
+            match event.fill with
+            | Some Order_events.Fill.{ fee; fee_currency; price; _ } -> (
+                try
+                  let fee_amount = Float.of_string fee in
+                  let base_currency =
+                    Symbol.enum_or_string_to_currency event.symbol ~side:`Buy
+                  in
+                  let quote_currency =
+                    Symbol.enum_or_string_to_currency event.symbol ~side:`Sell
+                  in
+                  let fee_usd =
+                    match Currency.Enum_or_string.equal fee_currency quote_currency with
+                    | true -> fee_amount
+                    | false ->
+                      (match Currency.Enum_or_string.equal fee_currency base_currency with
+                      | true -> fee_amount *. Float.of_string price
+                      | false -> 0.)
+                  in
+                  Some fee_usd
+                with _ -> None )
+            | None -> None
+          in
+          (match event.fill with
+           | Some (Order_events.Fill.{amount; price; _}) ->
+               let summary = Order_tracker.summary order_tracker in
+               let timestamp = event.timestampms in
+               let qty = Float.of_string amount in
+               let price = Float.of_string price in
+               let side = event.side in
+               let fee_usd = Option.value fee_usd ~default:0. in
+               let t =
+                 on_trade t ~timestamp ~side ~price ~qty ~fee_usd
+                 |> fun t -> on_summary t summary
+               in
+               ((t, order_tracker), t)
+           | None ->
+               (let summary = Order_tracker.summary order_tracker in
+                on_summary t summary |> fun t ->
+                ((t, order_tracker), t) )))
+      )
+
+      
+
+      
   let _pipe ?notional ?update_time ?update_source ~symbol = 
     pipe ~init:(create ~symbol ?notional ?update_time ?update_source ())
 
@@ -356,11 +383,12 @@ module Ledger (*: S *) = struct
     update_from_books t ~books:(Order_book.Books.(set_book empty) book)
 
   let on_trade' ?update_source ?timestamp ?(avg_trade_price : float option)
-      (t : t) ~symbol ~(price : float) ~(side : Side.t) ~(qty : float) : t =
+      ?(fee_usd : float = 0.) (t : t) ~symbol ~(price : float)
+      ~(side : Side.t) ~(qty : float) : t =
     Map.update t symbol ~f:(fun t ->
         let t = Option.value_or_thunk t ~default:(Entry.create ~symbol) in
-        Entry.on_trade ?update_source ?timestamp ?avg_trade_price ~qty ~price
-          ~side t )
+        Entry.on_trade ?update_source ?timestamp ?avg_trade_price ~fee_usd ~qty
+          ~price ~side t )
 
   let on_order_events (t : t) (events : Order_events.Order_event.t list) =
     let events =

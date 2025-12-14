@@ -6,6 +6,7 @@ module Order_id = Int64
 module Order_map = Map.Make (Order_id)
 module Error = Rest.Error
 module Concurrent_order_map = Concurrent_map.Make (Int64)
+module Concurrent_string_map = Concurrent_map.Make (String)
 
 module Client_order_id = struct
   include Nonce.File
@@ -36,7 +37,9 @@ let trade_pipe cfg nonce symbol =
 let balance_pipe cfg nonce =
   let request = () in
   Inf_pipe.unfold ~init:0 ~f:(fun epoch ->
-      Balances.post cfg nonce request >>| fun response -> (response, epoch + 1) )
+      Balances.post cfg nonce request >>= fun response ->
+      after (Time_float_unix.Span.of_sec 1.0) >>| fun () ->
+      (response, epoch + 1) )
 
 module Events = struct
   (** Auto-restarting pipe wrapper that reconnects on EOF *)
@@ -215,7 +218,8 @@ module Make (C : Cfg.S) = struct
       session_id : string;
       api_nonce : Nonce.reader;
       client_order_id_nonce : Client_order_id.reader;
-      events : Events.t
+      events : Events.t;
+      balances : Balances.response option Mvar.Read_write.t
     }
 
   (** CSV-serializable state snapshot for persistence *)
@@ -266,14 +270,22 @@ module Make (C : Cfg.S) = struct
         formatted_price
 
   (* Format a quantity with the correct precision based on quote_increment *)
-  let format_quantity t symbol quantity =
+  let format_quantity ?(side=`Buy) t symbol quantity =
     match symbol_details t symbol with
     | None ->
         Log.Global.error "No symbol details for %s, using default precision" (Symbol.to_string symbol);
         Float.to_string quantity
     | Some details ->
         let decimal_places = calc_decimal_places_from details.tick_size in
-        let formatted = sprintf "%.*f" decimal_places quantity in
+        let formatted = match side with 
+        | `Buy ->
+          sprintf "%.*f" decimal_places quantity
+        | `Sell ->
+          (* For sell orders, round down to avoid exceeding available balance *)
+          let factor = 10.0 **. (Float.of_int decimal_places) in
+          let qty_rounded = Float.round_down (quantity *. factor) /. factor in
+          sprintf "%.*f" decimal_places qty_rounded
+        in
         Log.Global.debug "Formatting quantity %.9f for %s with %d decimal places as %s" quantity (Symbol.to_string symbol) decimal_places formatted;
         formatted
         
@@ -283,18 +295,50 @@ module Make (C : Cfg.S) = struct
       timestamp_iso = Time_float_unix.to_string_iso8601_basic (Time_float_unix.now ()) ~zone:Time_float_unix.Zone.utc
     }
 
+  (* Cache writers per path to avoid reopening the CSV file on every write. *)
+  let writer_cache : (Writer.t * bool ref) Concurrent_string_map.t =
+    Concurrent_string_map.empty ()
+
+  let close_all_writers () =
+    let cache_data = Concurrent_string_map.data writer_cache in
+    List.iter cache_data ~f:(fun (w, _) -> don't_wait_for (Writer.close w))
+
+  let () =
+    Shutdown.at_shutdown (fun () ->
+        close_all_writers ();
+        Deferred.unit)
+
+  let header_needed path exists =
+    match exists with
+    | `No | `Unknown -> true
+    | `Yes -> (
+        try
+          let stat = Core_unix.stat path in
+          Int64.(equal stat.st_size zero)
+        with
+        | _ -> true )
+
+  let get_writer path header : (Writer.t * bool ref) Deferred.t =
+    match Concurrent_string_map.find writer_cache path with
+    | Some entry -> return entry
+    | None ->
+        Sys.file_exists path >>= fun exists ->
+        Writer.open_file ~append:true path >>= fun w ->
+        let header_written = ref (not (header_needed path exists)) in
+        Concurrent_string_map.set writer_cache ~key:path ~data:(w, header_written);
+        ( if not !header_written then (
+            Writer.write_line w header;
+            header_written := true;
+            Writer.flushed w )
+          else Deferred.unit )
+        >>| fun () -> (w, header_written)
+
   let write_state_csv ?(path = ".gemini_session_state.csv") (t : t) : unit Deferred.t =
     let csv_row = to_state_csv t in
-    (* Check if file exists to determine if we need to write header *)
-    Sys.file_exists path >>= fun exists ->
-    let file_exists = match exists with `Yes -> true | _ -> false in
-    Writer.with_file path ~append:true ~f:(fun writer ->
-        ( if not file_exists then
-            (* Write CSV header using generated function *)
-            Writer.write_line writer (String.concat ~sep:"," State_csv.csv_header) );
-        (* Write CSV row using generated function *)
-        Writer.write_line writer (String.concat ~sep:"," (State_csv.row_of_t csv_row));
-        Deferred.unit )
+    get_writer path (String.concat ~sep:"," State_csv.csv_header) >>= fun (w, _)
+      ->
+    Writer.write_line w (String.concat ~sep:"," (State_csv.row_of_t csv_row));
+    Writer.flushed w
 
   let generate_session_id () =
     (* Generate a unique session ID using timestamp and random component *)
@@ -319,7 +363,24 @@ module Make (C : Cfg.S) = struct
     Log.Global.info "Session.create: got client_order_id_nonce";
     Events.create ?symbols ?order_ids (module C) api_nonce >>= fun events ->
     Log.Global.info "Session.create: Events.create finished";
-    let t = { name; session_id; events; api_nonce; client_order_id_nonce } in
+    (* Fork the balance pipe for caching and external use *)
+    let balance_reader_1, balance_reader_2 = Inf_pipe.fork ~pushback_uses:`Fast_consumer_only events.balance in
+    let balances_mvar = Mvar.create () in
+    Mvar.set balances_mvar None;
+    let t = { name; session_id; events = {events with balance = balance_reader_1}; api_nonce; client_order_id_nonce; balances = balances_mvar } in
+    (* Start background task to update balances cache from pipe *)
+    don't_wait_for (
+      let rec loop () =
+        Inf_pipe.read balance_reader_2 >>= function
+        | `Ok balances ->
+            Log.Global.info "Session.create[%s]: balance update %s" session_id
+              (Balances.sexp_of_response balances |> Sexp.to_string_hum);
+            Mvar.set t.balances (Some balances);
+            loop ()
+        | _ -> loop ()
+      in
+      loop ()
+    );
     (* Write initial state - include session_id in filename if not explicitly provided *)
     let state_csv_path = 
       match state_csv_path with
@@ -328,7 +389,7 @@ module Make (C : Cfg.S) = struct
     in
     write_state_csv ~path:state_csv_path t >>| fun () ->
     Log.Global.info "Session.create: wrote initial state to %s" state_csv_path;
-    t
+    t 
 
   module New_order_request = struct
     type t =
@@ -337,11 +398,11 @@ module Make (C : Cfg.S) = struct
         price : string;
         side : Side.t;
         type_ : Order_type.t;
-        options : Order_execution_option.t list
+        options : Common.Order_execution_option.t list
       }
     [@@deriving make, sexp]
 
-    let make ?(type_ = `Exchange_limit) ?(options = [`Immediate_or_cancel]) = make_t ~type_ ~options
+    let make ?(type_ = `Exchange_limit) ?(options = []) = make_t ~type_ ~options
 
     let to_api ~client_order_id (t : t) : Order.New.request =
       let { symbol; amount; price; side; type_; options } = t in
@@ -354,23 +415,31 @@ module Make (C : Cfg.S) = struct
 
   let submit_order ?(autoformat=`All) t (req : New_order_request.t) :
       [ `Ok of Order.New.response * status_pipe | Error.post ] Deferred.t =
+    Log.Global.info "submit_order[%s]: requested %s" t.session_id
+      (New_order_request.sexp_of_t req |> Sexp.to_string_hum);
     let req = match autoformat with
     | `All ->
         let formatted_price = format_price t req.symbol (Float.of_string req.price) in
-        let formatted_quantity = format_quantity t req.symbol (Float.of_string req.amount) in
+        let formatted_quantity = format_quantity ~side:req.side t req.symbol (Float.of_string req.amount) in
         {req with price = formatted_price; amount = formatted_quantity}      
     | `Price ->
         let formatted_price = format_price t req.symbol (Float.of_string req.price) in
         {req with price = formatted_price}
     | `Quantity -> 
-        let formatted_quantity = format_quantity t req.symbol (Float.of_string req.amount) in
+        let formatted_quantity = format_quantity ~side:req.side t req.symbol (Float.of_string req.amount) in
         {req with amount = formatted_quantity}
     | `None -> req in
+    Log.Global.info "submit_order[%s]: formatted %s" t.session_id
+      (New_order_request.sexp_of_t req |> Sexp.to_string_hum);
     Inf_pipe.read t.client_order_id_nonce >>= fun client_order_id ->
+    Log.Global.info "submit_order[%s]: client_order_id=%s" t.session_id
+      client_order_id;
     let req = New_order_request.to_api ~client_order_id req in
     Order.New.post (cfg t) t.api_nonce req >>| function
     | `Ok response ->
       let order_id = response.order_id in
+      Log.Global.info "submit_order[%s]: accepted order_id=%Ld" t.session_id
+        order_id;
       let status_pipe : _ Inf_pipe.Reader.t =
         status_pipe (cfg t) t.api_nonce order_id
       in
@@ -380,21 +449,39 @@ module Make (C : Cfg.S) = struct
       Concurrent_order_map.set ~key:order_id ~data:status_pipe
         t.events.order_status;
       `Ok (response, status_pipe')
-    | #Error.post as e -> e
+    | #Error.post as e ->
+      Log.Global.error "submit_order[%s]: error %s" t.session_id
+        (Error.sexp_of_post e |> Sexp.to_string_hum);
+      e
 
   let cancel_order t req =
+    Log.Global.info "cancel_order[%s]: order_id=%Ld" t.session_id
+      req.Order.Cancel.By_order_id.order_id;
     Order.Cancel.By_order_id.post (cfg t) t.api_nonce req >>| function
     | `Ok response ->
+      Log.Global.info "cancel_order[%s]: ok order_id=%Ld" t.session_id
+        response.order_id;
       Concurrent_order_map.remove t.events.order_status response.order_id;
       `Ok response
-    | #Error.post as e -> e
+    | #Error.post as e ->
+      Log.Global.error "cancel_order[%s]: error %s" t.session_id
+        (Error.sexp_of_post e |> Sexp.to_string_hum);
+      e
 
   let cancel_all (t : t) =
+    Log.Global.info "cancel_all[%s]: issuing" t.session_id;
     Order.Cancel.All.post (cfg t) t.api_nonce () >>| function
     | `Ok response ->
+      Log.Global.info "cancel_all[%s]: ok" t.session_id;
       Concurrent_order_map.clear t.events.order_status;
       `Ok response
-    | #Error.post as e -> e
+    | #Error.post as e ->
+      Log.Global.error "cancel_all[%s]: error %s" t.session_id
+        (Error.sexp_of_post e |> Sexp.to_string_hum);
+      e
+
+  let get_balances (t : t) : Balances.response option = 
+    Mvar.peek t.balances |> Option.bind ~f:Fn.id
 end
 
 module Prod_session () = Make (Cfg.Production ())
