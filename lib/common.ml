@@ -422,7 +422,7 @@ end
 
 module Reject_reason = struct
   module T = struct
-    type t = [ `Invalid_quantity | `Insufficient_funds | `Self_cross_prevented | `Immediate_or_cancel_would_post ]
+    type t = [ `Invalid_quantity | `Insufficient_funds | `Self_cross_prevented | `Immediate_or_cancel_would_post | `Maker_or_cancel_would_take ]
     [@@deriving sexp, yojson, enumerate, compare, equal]
 
     let to_string = function
@@ -430,6 +430,7 @@ module Reject_reason = struct
       | `Insufficient_funds -> "InsufficientFunds"
       | `Self_cross_prevented -> "SelfCrossPrevented"
       | `Immediate_or_cancel_would_post -> "ImmediateOrCancelWouldPost"
+      | `Maker_or_cancel_would_take -> "MakerOrCancelWouldTake"
   end
 
   include T
