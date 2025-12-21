@@ -132,7 +132,8 @@ module Order_event : sig
       side : Side.t;
       behavior : string option; [@default None]
       type_ : Order_event_type.t; [@key "type"]
-      options : Common.Order_execution_option.t list; [@default []]
+      options : 
+      Common.Order_execution_option.t list; [@default []]
       timestamp : Timestamp.t;
       timestampms : Timestamp.Ms.t;
       is_live : bool;

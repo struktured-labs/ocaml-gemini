@@ -139,11 +139,22 @@ module T = struct
   let update_spot ?timestamp t spot =
     let open Float in
     let update_time = Option.value_or_thunk timestamp ~default:Timestamp.now in
-    let pnl_spot = t.position * spot in
+    let pnl_spot = t.position *. spot in
+    let is_nan x = match Float.classify x with | Float.Class.Nan -> true | _ -> false in
+    let bad = (t.position = 0.0) || is_nan spot || is_nan pnl_spot in
+    let pnl_spot, pnl =
+      match bad with
+      | true ->
+        Log.Global.info
+          "[Ledger] Zero/NaN detected in update_spot: position=%f spot=%f pnl_spot=%f. Setting pnl_spot=0 and pnl=notional only."
+          t.position spot pnl_spot;
+        (0.0, t.notional)
+      | false -> (pnl_spot, t.notional +. pnl_spot)
+    in
     { t with
       spot;
       pnl_spot;
-      pnl = t.notional + pnl_spot;
+      pnl;
       update_time;
       update_source = `Market_data;
       side=None;
