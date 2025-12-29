@@ -258,6 +258,10 @@ module Currency = struct
       | `Pnut
       | `Chillguy
       | `Elon
+      | `Shib
+      | `Uni
+      | `Bonk
+      | `Trump
       ]
     [@@deriving sexp, enumerate, equal, compare]
   end
@@ -319,6 +323,9 @@ module Symbol = struct
       | `Chillguyusd
       | `Elonusd
       | `Trumpusd
+      | `Shibusd
+      | `Uniusd
+      | `Bonkusd
       ]
     [@@deriving sexp, enumerate, equal, compare]
   end
@@ -422,7 +429,7 @@ end
 
 module Reject_reason = struct
   module T = struct
-    type t = [ `Invalid_quantity | `Insufficient_funds | `Self_cross_prevented | `Immediate_or_cancel_would_post | `Maker_or_cancel_would_take ]
+    type t = [ `Invalid_quantity | `Insufficient_funds | `Self_cross_prevented | `Immediate_or_cancel_would_post | `Maker_or_cancel_would_take | `Requested ]
     [@@deriving sexp, yojson, enumerate, compare, equal]
 
     let to_string = function
@@ -431,6 +438,7 @@ module Reject_reason = struct
       | `Self_cross_prevented -> "SelfCrossPrevented"
       | `Immediate_or_cancel_would_post -> "ImmediateOrCancelWouldPost"
       | `Maker_or_cancel_would_take -> "MakerOrCancelWouldTake"
+      | `Requested -> "Requested"
   end
 
   include T
